@@ -7,6 +7,8 @@
   <meta name="description" content="ArtisanPilot : pilotez vos publicités Google simplement. Des appels, des demandes de devis, un budget maîtrisé.">
   <title>ArtisanPilot — Votre publicité Google, sans complications</title>
   <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-pPBC7JQY2vMWS+nOm0h1L6h6Kn0jW8pRAoL95nTt6Hg=" crossorigin="">
+  <script src="/coverage.js" defer></script>
   <script src="/app.js" defer></script>
 </head>
 <body>
@@ -89,7 +91,22 @@
           <div class="page-heading"><div><div class="eyebrow">ÉTAPE 1</div><h1>Parlez-nous de votre activité.</h1><p>Pas de termes techniques. Seulement les informations essentielles.</p></div></div>
           <form id="profileForm" class="surface form-surface">
             <div class="form-grid"><label class="form-field">Nom de votre entreprise<input id="business_name" name="business_name" type="text" maxlength="120" placeholder="Ex. Plomberie Martin"></label><label class="form-field">Quel est votre métier ?<select id="job" name="job"><option value="plombier">Plombier</option><option value="serrurier">Serrurier</option><option value="debouchage">Débouchage</option><option value="electricien">Électricien</option><option value="chauffagiste">Chauffagiste</option><option value="vitrier">Vitrier</option><option value="climatisation">Climatisation</option></select></label></div>
-            <div class="form-grid"><label class="form-field">Dans quelle ville travaillez-vous ?<input id="city" name="city" type="text" maxlength="90" placeholder="Ex. Lyon" required></label><label class="form-field">Adresse de votre site (facultatif)<input id="website" name="website" type="url" placeholder="https://mon-entreprise.fr"></label></div>
+            <div class="form-grid">
+              <div class="form-field city-field"><label for="city">Dans quelle ville travaillez-vous ?</label>
+                <input id="city" name="city" type="text" maxlength="90" placeholder="Tapez votre ville, ex. Lyon" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="citySuggestions" required>
+                <div id="citySuggestions" class="city-suggestions hidden" role="listbox" aria-label="Villes proposées"></div>
+                <small id="cityFeedback" class="city-feedback">Choisissez une ville parmi les suggestions.</small>
+              </div>
+              <label class="form-field">Adresse de votre site (facultatif)<input id="website" name="website" type="url" placeholder="https://mon-entreprise.fr"></label>
+            </div>
+            <section class="coverage-panel" aria-labelledby="coverageTitle">
+              <div class="coverage-heading"><div><h3 id="coverageTitle">Votre zone d'intervention</h3><p>Jusqu'où pouvez-vous vous déplacer pour intervenir chez vos clients ?</p></div><strong id="coverageRadiusValue" class="coverage-radius-value">20 km</strong></div>
+              <input id="coverageRadius" type="range" min="1" max="100" step="1" value="20" aria-label="Rayon d'intervention en kilomètres" class="coverage-slider">
+              <div class="coverage-scale"><span>1 km</span><span>50 km</span><span>100 km</span></div>
+              <div id="coverageMap" class="coverage-map" role="img" aria-label="Carte de la zone d'intervention"><div id="coverageMapPlaceholder" class="coverage-placeholder">Sélectionnez votre ville pour visualiser votre zone d'intervention.</div></div>
+              <div class="coverage-bottom"><span id="coverageLocationLabel">Ville non sélectionnée</span><span id="coverageMapProvider">Carte interactive</span></div>
+              <p class="coverage-disclaimer">Le cercle indique un rayon à vol d'oiseau. Le ciblage réel des annonces peut varier selon les règles Google Ads.</p>
+            </section>
             <div class="form-divider"></div>
             <h3>Que voulez-vous mettre en avant ?</h3>
             <div class="option-grid" id="destinationOptions">
