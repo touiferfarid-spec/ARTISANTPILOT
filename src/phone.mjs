@@ -4,7 +4,7 @@ export function normalizeFrenchPhone(input) {
   const raw = String(input ?? '').trim();
   if (!raw) return '';
   if (raw.length > 40 || !/^[+\d\s().-]+$/.test(raw)) throw new Error('Numéro de téléphone français invalide.');
-  const compact = raw.replace(/[\s().-]/g, '');
+  const compact = raw.replace(/^\+33\s*\(0\)/, '+33').replace(/[\s().-]/g, '');
   if (/^0[1-9]\d{8}$/.test(compact)) return '+33' + compact.slice(1);
   if (/^\+33[1-9]\d{8}$/.test(compact)) return compact;
   if (/^0033[1-9]\d{8}$/.test(compact)) return '+' + compact.slice(2);
