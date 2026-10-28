@@ -1,7 +1,7 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {generatePlan,dailyBudgetInfo,knownJobs,totalFromRows} from '../src/planner.mjs';
 import {suggestExclusions} from '../src/suggestions.mjs';
-const p={job:'plombier',city:'Lyon',business_name:'Plomberie Martin',budget_eur:30,website:'https://example.fr',destination:'site',geo_target_id:'1011234'};
+const p={job:'plombier',city:'Lyon',business_name:'Plomberie Martin',budget_eur:30,website:'https://example.fr',phone:'04 12 34 56 78',destination:'site',geo_target_id:'1011234'};
 test('all trades create plausible RSA plans',()=>{for(const job of knownJobs){const plan=generatePlan({...p,job});assert.equal(plan.job,job);assert.ok(plan.keywords.length>=4);assert.ok(plan.headlines.length>=3);assert.ok(plan.descriptions.length>=2);assert.ok(plan.headlines.every(s=>s.length<=30));assert.ok(plan.descriptions.every(s=>s.length<=90));}});
 test('campaign plan never advertises unverified availability claims',()=>{const x=generatePlan(p);assert.ok(!x.headlines.some(s=>s.includes('24/7')));assert.ok(!x.descriptions.some(s=>/garanti|en 10 minutes|24\/7/i.test(s)))});
 test('budget explanation does not assert higher demand from overspend alone',()=>{const info=dailyBudgetInfo(30,43);assert.equal(info.isAboveAverage,true);assert.equal(info.approxMonthlyLimit,912);assert.match(info.explanation,/ne pouvons pas confirmer/);assert.doesNotMatch(info.explanation,/la demande observée est plus élevée/)});
