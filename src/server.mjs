@@ -151,7 +151,7 @@ async function handle(req,res){
     const check=await query('DELETE FROM oauth_states WHERE state_hash=$1 AND user_id=$2 AND expires_at>now() RETURNING provider',[sha(state),a.id]);
     if(!check.rows.length)throw new HttpError('Autorisation expirée. Réessayez.',400);
     const tok=await exchangeCode(code);await storeTokens(query,a.id,check.rows[0].provider,tok);
-    await audit(a.id,'google.oauth', {provider:check.rows[0].provider});return redirect(res,config.baseUrl+'/?google=connected#dashboard');
+    await audit(a.id,'google.oauth', {provider:check.rows[0].provider});return redirect(res,config.baseUrl+'/?google=connected#connections');
   }
   if(p==='/api/google/accounts'&&m==='GET'){
     if(!integrationsConfigured().google)throw new HttpError('Google Ads non configuré',503);
