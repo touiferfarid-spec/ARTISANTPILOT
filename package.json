@@ -1,0 +1,14 @@
+{
+  "name": "artisanpilot-mvp",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.mjs"
+  },
+  "dependencies": {
+    "pg": "^8.13.3"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
