@@ -1,3 +1,4 @@
+import {validCoordinates,validateRadiusKm} from './locations.mjs';
 const JOBS = {
   plombier: {
     label:'Plomberie', variants:['plombier','dépannage plomberie','urgence plomberie','réparation fuite'],
@@ -38,16 +39,20 @@ export function generatePlan(profile) {
   const destination=profile.destination||'site';
   const website=clean(profile.website||'');
   const verifiedSite=/^https:\/\/[a-z0-9.-]+\.[a-z]{2,}(\/[^\s]*)?$/i.test(website);
+  let proximity=null;
+  if(profile.city_code && validCoordinates(profile.city_lat,profile.city_lng)){
+    try{proximity={cityCode:String(profile.city_code),lat:Number(profile.city_lat),lng:Number(profile.city_lng),radiusKm:validateRadiusKm(profile.radius_km??20)}}catch{}
+  }
   const warnings=[];
   if(!verifiedSite)warnings.push('Site HTTPS vérifié obligatoire pour une campagne Search classique.');
   if(destination!=='site')warnings.push('Publicité de fiche Google : éligibilité locale et association Business Profile à vérifier.');
-  if(!profile.geo_target_id)warnings.push('Vérification du ciblage géographique requise avant publication.');
+  if(!proximity&&!profile.geo_target_id)warnings.push('Sélectionnez et validez la ville et le rayon d’intervention avant de publier.');
   if(!profile.conversion_verified)warnings.push('Tracking des appels et formulaires non validé.');
   return {
     kind:'SEARCH', job, jobLabel:data.label, city, destination, website, dailyBudgetEuro:budget,
     keywords, negatives:data.negatives.map(text=>({text,matchType:'PHRASE'})),
     headlines:headlines.slice(0,15), descriptions:descriptions.slice(0,4),
-    geoTargetId:profile.geo_target_id||null,
+    geoTargetId:profile.geo_target_id||null, proximity,
     recommendedBidStrategy:'MAXIMIZE_CLICKS_INITIAL',
     status:'draft', warnings,
     createdBy:'ArtisanPilot',
