@@ -1,0 +1,7 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {passwordHash,passwordVerify,cookie,isEmail,trustedOrigin,safeCustomerId,constantTimeEqual,secureHeaders} from '../src/security.mjs';
+test('passwords are salted and hash verifies',async()=>{const a=await passwordHash('ExempleFort!2026');const b=await passwordHash('ExempleFort!2026');assert.notEqual(a,b);assert.equal(await passwordVerify('ExempleFort!2026',a),true);assert.equal(await passwordVerify('WrongPassword!!!!',a),false)});
+test('minimum password strength length enforced',async()=>{await assert.rejects(()=>passwordHash('weak'))});
+test('session cookies scoped to browser and secure in production',()=>{const v=cookie('xyz',{prod:true});assert.match(v,/HttpOnly/);assert.match(v,/Secure/);assert.match(v,/SameSite=Lax/)});
+test('basic input and origin validators',()=>{assert.equal(isEmail('artisan@example.fr'),true);assert.equal(isEmail('not-an-email'),false);assert.equal(safeCustomerId('123-456-7890'),'1234567890');assert.equal(safeCustomerId('invalid'),null);assert.equal(trustedOrigin({headers:{origin:'https://app.example.com'}},'https://app.example.com'),true);assert.equal(trustedOrigin({headers:{origin:'https://evil.example.com'}},'https://app.example.com'),false)});
+test('constant time compare and security headers',()=>{assert.equal(constantTimeEqual('abc','abc'),true);assert.equal(constantTimeEqual('abc','abc1'),false);assert.ok(secureHeaders()['Content-Security-Policy'].includes("default-src 'self'"))});

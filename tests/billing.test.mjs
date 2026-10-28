@@ -1,0 +1,3 @@
+import test from 'node:test';import assert from 'node:assert/strict';import crypto from 'node:crypto';
+import {checkStripeSignature} from '../src/billing.mjs';
+test('Stripe webhook HMAC and timestamp are checked',()=>{const body='{"id":"evt_example"}',secret='secret_not_real',now=1720000000000,ts=Math.floor(now/1000),mac=crypto.createHmac('sha256',secret).update(ts+'.'+body).digest('hex');const sig='t='+ts+',v1='+mac;assert.equal(checkStripeSignature(body,sig,secret,{now}),true);assert.equal(checkStripeSignature(body+'x',sig,secret,{now}),false);assert.equal(checkStripeSignature(body,sig,secret,{now:now+600000}),false)});

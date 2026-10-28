@@ -1,0 +1,31 @@
+const env = process.env;
+export const config = {
+  port: Number(env.PORT || 3000),
+  baseUrl: (env.APP_BASE_URL || 'http://localhost:3000').replace(/\/$/, ''),
+  dbUrl: env.DATABASE_URL || '',
+  prod: env.NODE_ENV === 'production',
+  adsVersion: env.GOOGLE_ADS_API_VERSION || 'v26',
+  googleId: env.GOOGLE_CLIENT_ID || '',
+  googleSecret: env.GOOGLE_CLIENT_SECRET || '',
+  developerToken: env.GOOGLE_ADS_DEVELOPER_TOKEN || '',
+  mccId: (env.GOOGLE_ADS_LOGIN_CUSTOMER_ID || '').replace(/\D/g, ''),
+  encryptionKey: env.OAUTH_ENCRYPTION_KEY || '',
+  stripeKey: env.STRIPE_SECRET_KEY || '',
+  stripePrice: env.STRIPE_PRICE_ID || '',
+  stripeWebhook: env.STRIPE_WEBHOOK_SECRET || '',
+  openaiKey: env.OPENAI_API_KEY || '',
+  openaiModel: env.OPENAI_MODEL || 'gpt-4.1-mini',
+  cronToken: env.CRON_TOKEN || '',
+  allowAccountCreation: env.GOOGLE_ADS_ALLOW_ACCOUNT_CREATION === 'true',
+  allowCampaignWrites: env.GOOGLE_ADS_ALLOW_CAMPAIGN_WRITES === 'true',
+  allowActivation: env.GOOGLE_ADS_ALLOW_ACTIVATION === 'true',
+  allowLocationSync: env.GOOGLE_ADS_ALLOW_LOCATION_SYNC === 'true',
+  businessEnabled: env.GOOGLE_BUSINESS_PROFILE_ENABLED === 'true',
+  dailyEnabled: env.DAILY_REPORTS_ENABLED === 'true',
+};
+export const integrationsConfigured = () => ({
+  google: Boolean(config.googleId && config.googleSecret && config.developerToken && /^[a-f0-9]{64}$/i.test(config.encryptionKey)),
+  business: Boolean(config.businessEnabled && config.googleId && config.googleSecret && /^[a-f0-9]{64}$/i.test(config.encryptionKey)),
+  stripe: Boolean(config.stripeKey && config.stripePrice && config.stripeWebhook),
+  ai: Boolean(config.openaiKey),
+});

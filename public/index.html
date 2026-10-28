@@ -1,19 +1,142 @@
-<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>ArtisanPilot – Espace artisan</title>
-<style>*{box-sizing:border-box}body{margin:0;font:15px system-ui,sans-serif;background:#f4f8fb;color:#18324c}header{background:#0b2546;color:white;padding:24px 7vw;font-size:24px;font-weight:850}main{max-width:820px;margin:44px auto;padding:0 20px}h1{font-size:36px;letter-spacing:-1px}p{color:#6c7e95;line-height:1.65}.card{background:white;border:1px solid #dfe8f2;border-radius:20px;padding:26px;margin:20px 0;box-shadow:0 15px 30px #142d4409}.grid{display:grid;grid-template-columns:1fr 1fr;gap:15px}label{display:block;font-weight:700;font-size:13px;margin:13px 0 6px}input,select{font:inherit;width:100%;padding:13px;border:1px solid #d6e1eb;border-radius:9px}button{background:#0cae97;color:white;border:0;border-radius:10px;padding:13px 17px;font-weight:780;cursor:pointer;margin-top:15px}button.alt{background:#e8f7f3;color:#087a69}.hidden{display:none}.note{padding:15px;border-radius:13px;background:#eaf4fc;color:#4b6481;font-size:13px;line-height:1.7}.status{min-height:16px;font-size:13px;color:#b44040}@media(max-width:580px){.grid{grid-template-columns:1fr}main{margin-top:20px}.card{padding:18px}}</style></head><body>
-<header>✳ ArtisanPilot <span style="font-size:12px;opacity:.7">MVP pilote</span></header>
-<main><h1>Plus d'appels. Moins de complications.</h1><p>Configurez votre publicité Google en quelques minutes. Les fonctionnalités Google Ads sont en cours de connexion : aucune campagne réelle n'est lancée depuis cet espace.</p>
-<section id="auth" class="card"><h2 id="authTitle">Créer mon compte artisan</h2><form id="authForm"><label>Email</label><input id="email" type="email" required autocomplete="email"><label>Mot de passe (12 caractères minimum)</label><input id="password" type="password" required minlength="12"><button id="authSubmit" type="submit">Créer mon compte</button> <button id="switch" type="button" class="alt">Se connecter</button><p id="authError" class="status"></p></form></section>
-<div id="app" class="hidden"><section class="card"><h2>Votre espace personnel</h2><p id="username"></p><button class="alt" id="logout">Se déconnecter</button></section>
-<section class="card"><h2>1. Votre activité</h2><form id="profile"><div class="grid"><div><label>Métier</label><select id="job"><option>Plombier</option><option>Serrurier</option><option>Débouchage</option><option>Électricien</option><option>Chauffagiste</option><option>Vitrier</option><option>Climatisation</option></select></div><div><label>Ville d'intervention</label><input id="city" required placeholder="Lyon"></div></div><label>Votre site HTTPS (facultatif)</label><input id="website" type="url" placeholder="https://mon-site.fr"><div class="grid"><div><label>Faire de la publicité pour</label><select id="destination"><option value="site">Mon site internet</option><option value="profile">Ma fiche Google</option><option value="both">Les deux</option></select></div><div><label>Budget moyen par jour (€)</label><input id="avg_budget_eur" type="number" min="5" max="5000" value="30"></div></div><label>Avez-vous déjà un compte Google Ads ?</label><select id="ads_mode"><option value="existing">Oui</option><option value="new">Non, je veux en créer un</option></select><p id="budgetInfo" class="note"></p><button type="submit">Enregistrer mon activité</button><p id="profileError" class="status"></p></form></section>
-<section class="card"><h2>2. Votre prochaine campagne</h2><p>Préparez un brouillon. Les publicités ne peuvent pas être lancées avant la configuration Google Ads.</p><button id="createDraft">Préparer ma publicité</button><p id="draftResult" class="note" style="margin-top:15px"></p></section><section class="card"><h2>3. Vos connexions</h2><p class="note">Google Ads : à connecter. OpenAI : à connecter. Abonnement Stripe : à configurer. Les créations de campagnes et prélèvements sont désactivés jusqu'à la validation complète.</p></section></div>
-</main><script>
-let register=true;const $=id=>document.getElementById(id);async function api(path,method,body){const r=await fetch(path,{method:method||"GET",headers:body?{"content-type":"application/json"}:{},body:body?JSON.stringify(body):undefined});const data=await r.json();if(!r.ok)throw Error(data.error||"Erreur serveur");return data}
-async function show(user){$("auth").classList.toggle("hidden",!!user);$("app").classList.toggle("hidden",!user);if(user){$("username").textContent=user.email;const p=(await api("/api/profile")).profile;if(p)for(const k of ["job","city","website","destination","avg_budget_eur","ads_mode"])if(p[k]!=null)$(k).value=p[k]}}
-api("/api/me").then(d=>show(d.user)).catch(()=>{});
-$("switch").onclick=()=>{register=!register;$("authTitle").textContent=register?"Créer mon compte artisan":"Se connecter";$("authSubmit").textContent=register?"Créer mon compte":"Se connecter";$("switch").textContent=register?"Se connecter":"Créer mon compte";$("authError").textContent=""};
-$("authForm").onsubmit=async e=>{e.preventDefault();try{const a=await api("/api/auth/"+(register?"register":"login"),"POST",{email:$("email").value,password:$("password").value});$("password").value="";await show(a.user)}catch(err){$("authError").textContent=err.message}};
-$("logout").onclick=async()=>{await api("/api/auth/logout","POST");await show(null)};
-$("avg_budget_eur").oninput=()=>{$("budgetInfo").textContent="Budget mensuel habituel : "+Math.round(Number($("avg_budget_eur").value)*30.4)+" €. Google peut dépenser jusqu'à deux fois le budget moyen certains jours pour de nombreuses campagnes."};$("avg_budget_eur").oninput();
-$("profile").onsubmit=async e=>{e.preventDefault();try{const p=Object.fromEntries(["job","city","website","destination","avg_budget_eur","ads_mode"].map(k=>[k,$(k).value]));await api("/api/profile","POST",p);$("profileError").textContent="✓ Configuration enregistrée"}catch(err){$("profileError").textContent=err.message}};
-$("createDraft").onclick=async()=>{try{const d=await api("/api/drafts","POST",{});$("draftResult").textContent="✓ Brouillon créé : "+d.draft.id+". Aucune publicité activée."}catch(err){$("draftResult").textContent=err.message}};
-</script></body></html>
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0b1e36">
+  <meta name="description" content="ArtisanPilot : pilotez vos publicités Google simplement. Des appels, des demandes de devis, un budget maîtrisé.">
+  <title>ArtisanPilot — Votre publicité Google, sans complications</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <a href="#accueil" class="brand"><span class="brand-mark">A<span>✳</span></span><span>ArtisanPilot</span></a>
+    <nav class="marketing-links" id="marketingLinks"><a href="#fonctionnement">Comment ça marche</a><a href="#offre">Tarif</a></nav>
+    <div class="header-right">
+      <span id="topUser" class="top-user hidden"></span>
+      <button id="openAuth" class="btn btn-small btn-light">Mon espace <span aria-hidden="true">↗</span></button>
+      <button id="logout" class="btn btn-small btn-outline hidden">Se déconnecter</button>
+    </div>
+  </header>
+  <main id="marketingView" class="marketing">
+    <section class="hero">
+      <div class="hero-pattern"></div>
+      <div class="container hero-content">
+        <div class="hero-copy">
+          <div class="hero-label"><span class="hero-label-dot"></span> Votre assistant publicitaire pour artisans</div>
+          <h1>Plus de clients.<br>Moins de <em>complications.</em></h1>
+          <p>Votre publicité sur Google, expliquée simplement. Choisissez ce que vous voulez promouvoir, indiquez votre ville et votre budget : ArtisanPilot vous accompagne pour préparer vos campagnes.</p>
+          <div class="hero-actions">
+            <button id="heroStart" class="btn btn-green btn-large">Découvrir mon assistant <span>→</span></button>
+            <a href="#fonctionnement" class="hero-secondary">Comment ça marche <span>↘</span></a>
+          </div>
+          <p class="hero-note"><span class="tiny-check">✓</span> Sans connaissances Google Ads <span class="bullet">•</span> Budget publicitaire payé à Google <span class="bullet">•</span> Version pilote</p>
+        </div>
+        <div class="hero-preview">
+          <div class="sample-window">
+            <div class="sample-header"><span class="sample-icon">✳</span><strong>Bonjour, bienvenue !</strong><span class="sample-tag">EXEMPLE</span></div>
+            <p class="sample-subtitle">Votre activité, en toute simplicité.</p>
+            <div class="sample-grid"><div class="sample-stat"><small>Vos appels</small><strong>42</strong><span>Illustration fictive</span></div><div class="sample-stat"><small>Coût par appel</small><strong>18,60 €</strong><span>Illustration fictive</span></div></div>
+            <div class="sample-graph" aria-hidden="true"><i style="height:42%"></i><i style="height:61%"></i><i style="height:50%"></i><i style="height:76%"></i><i style="height:58%"></i><i style="height:90%"></i><i style="height:73%"></i><i style="height:100%"></i><i style="height:78%"></i></div>
+            <div class="sample-note">✦ &nbsp;Votre assistant vous explique pourquoi Google dépense parfois plus certains jours.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section id="fonctionnement" class="container how">
+      <div class="eyebrow">FAIT POUR LES PROS DE TERRAIN</div>
+      <h2>3 étapes. <span>Et c'est tout.</span></h2>
+      <p>Plus besoin de naviguer dans des dizaines de réglages publicitaires. L'application parle votre langage.</p>
+      <div class="how-cards">
+        <div class="how-card"><div class="how-icon">01</div><h3>Présentez votre entreprise</h3><p>Votre métier, votre ville et votre site ou votre fiche Google.</p></div>
+        <div class="how-card"><div class="how-icon">02</div><h3>Définissez votre budget</h3><p>Vous choisissez votre budget moyen. On vous explique les variations possibles.</p></div>
+        <div class="how-card"><div class="how-icon">03</div><h3>Suivez ce qui compte</h3><p>Vos dépenses, vos appels et vos demandes, une fois votre compte connecté.</p></div>
+      </div>
+    </section>
+    <section id="offre" class="offer-section"><div class="container offer-inner"><div><div class="eyebrow">UNE OFFRE CLAIRE</div><h2>99 € <span>/ mois</span></h2><p>Tarif envisagé, hors budget publicitaire payé à Google. Les fonctions avancées sont en cours d'activation.</p></div><button id="offerStart" class="btn btn-dark">Découvrir la démo <span>→</span></button></div></section>
+    <footer class="marketing-footer container">ArtisanPilot · Version pilote · Aucune publicité active sur cette démonstration · Les résultats illustrés sont fictifs.</footer>
+  </main>
+  <main id="appView" class="app hidden">
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Navigation de l'application">
+        <div class="side-eyebrow">MON ESPACE ARTISAN</div>
+        <button class="side-link active" data-tab="dashboard"><span class="side-icon">◫</span> Tableau de bord</button>
+        <button class="side-link" data-tab="setup"><span class="side-icon">✎</span> Mon activité</button>
+        <button class="side-link" data-tab="campaigns"><span class="side-icon">✳</span> Ma publicité</button>
+        <button class="side-link" data-tab="connections"><span class="side-icon">↗</span> Mes connexions</button>
+        <button class="side-link" data-tab="billing"><span class="side-icon">▤</span> Mon abonnement</button>
+        <div class="sidebar-bottom"><div class="sidebar-help">✦<br><b>Votre assistant</b><p>Pas de mots compliqués. Le logiciel vous explique les actions importantes.</p></div><span>ARTISANPILOT V3 · PILOTE</span></div>
+      </aside>
+      <div class="app-main">
+        <div class="app-banner"><span class="banner-dot"></span><strong>VERSION PILOTE :</strong> aucune publicité ne sera lancée sans configuration, validation et activation explicite.</div>
+        <section class="tab-view" id="tab-dashboard">
+          <div class="page-heading"><div><div class="eyebrow">VOTRE TABLEAU DE BORD</div><h1>Bonjour <span id="greetingName">👋</span></h1><p>Voici ce qui se passe avec votre publicité Google.</p></div><button class="btn btn-light btn-small" data-goto="setup">Modifier mon activité</button></div>
+          <div id="setupReminder" class="callout callout-blue">Commencez par renseigner votre métier, votre ville et votre budget. <button class="inline-button" data-goto="setup">Configurer →</button></div>
+          <div class="metrics-grid">
+            <div class="metric"><div class="metric-title">Dépenses Google <span>↗</span></div><div class="metric-value" id="metricSpend">—</div><div class="metric-detail" id="metricSpendInfo">Aucun compte connecté</div></div>
+            <div class="metric"><div class="metric-title">Appels rapportés <span>☎</span></div><div class="metric-value" id="metricCalls">—</div><div class="metric-detail">Selon les données de Google Ads</div></div>
+            <div class="metric"><div class="metric-title">Demandes suivies <span>◎</span></div><div class="metric-value" id="metricLeads">—</div><div class="metric-detail">Conversions configurées chez Google</div></div>
+            <div class="metric"><div class="metric-title">Budget moyen <span>◷</span></div><div class="metric-value" id="metricBudget">30 €</div><div class="metric-detail">Par jour · vous gardez la main</div></div>
+          </div>
+          <div class="dashboard-columns">
+            <div class="surface data-panel"><div class="panel-heading"><div><h3>Mes dépenses récentes</h3><p>Un suivi clair de votre budget publicitaire.</p></div><span class="faded-tag">30 JOURS</span></div><div class="chart-empty" id="spendChart"><div class="empty-state"><span>▤</span><strong>En attente de connexion Google Ads</strong><p>Vos dépenses réelles apparaîtront ici, sans chiffres inventés.</p></div></div></div>
+            <div class="surface assistant-panel"><div class="panel-heading"><div><h3><span class="green-spark">✳</span> Votre assistant vous informe</h3><p>Des explications simples, chaque jour.</p></div></div><div id="assistantNotice" class="assistant-notice"><span class="notice-symbol">i</span><div><strong>Votre budget reste sous votre contrôle.</strong><p>Google peut dépenser davantage certains jours que votre moyenne quotidienne. Nous expliquerons les variations à partir de vos vraies données.</p></div></div><div class="notice-list" id="latestNotices"></div><div class="budget-bands"><div><span>Budget moyen par jour</span><b id="dailyDisplay">30 €</b></div><div><span>Limite mensuelle habituelle*</span><b id="monthDisplay">912 €</b></div></div><p class="footnote">*Pour la plupart des campagnes au budget journalier moyen inchangé. Les règles réelles de facturation peuvent varier.</p></div>
+          </div>
+          <div class="surface actions-panel"><div><h3>Vos prochaines étapes</h3><p>Il reste quelques réglages avant de démarrer votre publicité.</p></div><div id="stepsList" class="checklist"></div></div>
+        </section>
+        <section class="tab-view hidden" id="tab-setup">
+          <div class="page-heading"><div><div class="eyebrow">ÉTAPE 1</div><h1>Parlez-nous de votre activité.</h1><p>Pas de termes techniques. Seulement les informations essentielles.</p></div></div>
+          <form id="profileForm" class="surface form-surface">
+            <div class="form-grid"><label class="form-field">Nom de votre entreprise<input id="business_name" name="business_name" type="text" maxlength="120" placeholder="Ex. Plomberie Martin"></label><label class="form-field">Quel est votre métier ?<select id="job" name="job"><option value="plombier">Plombier</option><option value="serrurier">Serrurier</option><option value="debouchage">Débouchage</option><option value="electricien">Électricien</option><option value="chauffagiste">Chauffagiste</option><option value="vitrier">Vitrier</option><option value="climatisation">Climatisation</option></select></label></div>
+            <div class="form-grid"><label class="form-field">Dans quelle ville travaillez-vous ?<input id="city" name="city" type="text" maxlength="90" placeholder="Ex. Lyon" required></label><label class="form-field">Adresse de votre site (facultatif)<input id="website" name="website" type="url" placeholder="https://mon-entreprise.fr"></label></div>
+            <div class="form-divider"></div>
+            <h3>Que voulez-vous mettre en avant ?</h3>
+            <div class="option-grid" id="destinationOptions">
+              <label class="option-card selected"><input type="radio" name="destination" value="site" checked><span class="option-icon">◎</span><b>Mon site internet</b><small>Pour attirer des visites et des demandes de devis.</small></label>
+              <label class="option-card"><input type="radio" name="destination" value="profile"><span class="option-icon">⌖</span><b>Ma fiche Google</b><small>Annonces locales selon votre éligibilité.</small></label>
+              <label class="option-card"><input type="radio" name="destination" value="both"><span class="option-icon">✳</span><b>Les deux</b><small>Site web + annonces locales compatibles.</small></label>
+            </div>
+            <div id="localNotice" class="form-tip hidden">La publicité directement vers une fiche Google n'est pas disponible pour tous les artisans. Nous vérifierons ce qui est possible pour votre établissement.</div>
+            <div class="form-divider"></div>
+            <div class="budget-header"><div><h3>Combien voulez-vous investir sur Google ?</h3><p>C'est le budget de publicité, payé directement à Google.</p></div><div class="budget-input"><input id="budget_eur" type="number" min="5" max="5000" step="5" value="30" aria-label="Budget quotidien"> <span>€ / jour</span></div></div>
+            <input type="range" id="budgetRange" class="budget-range" min="5" max="150" step="5" value="30">
+            <div class="budget-calculation"><div><small>Budget moyen quotidien</small><strong id="budgetAverage">30 €</strong></div><div><small>Plafond mensuel habituel*</small><strong id="budgetMonth">912 €</strong></div></div>
+            <div class="form-tip">✦ Votre assistant vous préviendra si Google dépense davantage certains jours. Cela ne signifie pas automatiquement que votre limite mensuelle est dépassée.</div>
+            <div class="form-grid"><label class="form-field">Avez-vous déjà Google Ads ?<select id="ads_mode"><option value="new">Non, je veux créer un compte</option><option value="existing">Oui, j'ai déjà un compte</option></select></label><label class="form-field">Alerte si la dépense dépasse le budget moyen de :<select id="daily_max_alert_percent"><option value="10">10 %</option><option value="25" selected>25 %</option><option value="50">50 %</option><option value="100">100 %</option></select></label></div>
+            <div class="form-actions"><span id="profileFeedback" class="feedback" role="status"></span><button class="btn btn-green" type="submit">Enregistrer mon activité <span>→</span></button></div>
+          </form>
+        </section>
+        <section class="tab-view hidden" id="tab-campaigns">
+          <div class="page-heading"><div><div class="eyebrow">ÉTAPE 2</div><h1>Votre prochaine publicité.</h1><p>Un brouillon adapté à votre métier, que vous gardez le droit de vérifier.</p></div><button id="createDraft" class="btn btn-green">Préparer ma publicité <span>✳</span></button></div>
+          <div id="draftEmpty" class="surface campaign-empty"><div class="big-icon">✳</div><h3>Votre assistant est prêt.</h3><p>Il préparera des annonces et des recherches pertinentes pour votre activité. Les campagnes sont toujours mises en pause avant validation.</p><button class="btn btn-light" data-goto="setup">Vérifier mon activité</button></div>
+          <div id="campaignDraft" class="hidden"></div>
+          <div class="surface connection-card" style="margin-top:17px"><div class="panel-heading"><div><h3>Recherches à surveiller</h3><p>Vérifiez ce qui coûte de l’argent sans apporter de résultat.</p></div><button id="loadRecommendations" class="btn btn-light btn-small">Analyser mon compte</button></div><div id="recommendationsBox" class="notice-list"><p class="footnote">Aucune exclusion automatique. Les suggestions se baseront uniquement sur les données réelles de Google Ads.</p></div></div>
+          <div class="surface safety-panel"><div class="safety-icon">✓</div><div><h3>Aucune dépense sans votre accord</h3><p>Les campagnes sont d'abord préparées, puis vérifiées et créées en pause. L'activation exige des conversions vérifiées, une facturation Google valide et votre confirmation.</p></div></div>
+        </section>
+        <section class="tab-view hidden" id="tab-connections">
+          <div class="page-heading"><div><div class="eyebrow">ÉTAPE 3</div><h1>Connectez vos comptes.</h1><p>Vous restez propriétaire de vos comptes Google et de votre budget publicitaire.</p></div></div>
+          <div class="connection-grid">
+            <div class="surface connection-card"><div class="connection-head"><div class="provider-logo google">G</div><div><h3>Google Ads</h3><p>Vos campagnes et vos dépenses.</p></div><span id="googleStatus" class="conn-pill">À configurer</span></div><p class="connection-text">Connectez votre compte existant ou créez-en un si votre gestionnaire Google le permet.</p><div id="googleActions" class="connection-actions"></div><div id="accountSelection" class="account-select hidden"><label class="form-field">Votre compte publicitaire<select id="googleAccountSelect"></select></label><button id="selectAccount" class="btn btn-light btn-small">Choisir ce compte</button></div><p class="footnote">Pour tout nouveau compte, le moyen de paiement se configure chez Google.</p></div>
+            <div class="surface connection-card"><div class="connection-head"><div class="provider-logo maps">⌖</div><div><h3>Fiche Google</h3><p>Votre établissement sur Maps.</p></div><span id="businessStatus" class="conn-pill">À configurer</span></div><p class="connection-text">Associez votre fiche Google Business Profile pour examiner les possibilités de publicité locale.</p><div id="businessActions" class="connection-actions"></div><div id="businessLink" class="account-select hidden"><label class="form-field">Fiche Google à associer<select id="businessAccountSelect"></select></label><button id="linkBusiness" class="btn btn-green btn-small">Associer ma fiche</button></div><p class="footnote">La promotion de la fiche dépend du type d'établissement et des formats disponibles.</p></div>
+          </div>
+          <div class="surface connection-card geo-card"><div><h3>Vérifier votre ville</h3><p>Avant de diffuser des annonces, Google doit confirmer la zone géographique ciblée.</p></div><div class="geo-picker"><button id="checkGeo" class="btn btn-light btn-small">Chercher ma ville</button><select id="geoSelect"><option value="">Aucune zone vérifiée</option></select><button id="saveGeo" class="btn btn-green btn-small">Confirmer la zone</button></div><p id="geoMessage" class="feedback"></p></div>
+          <div class="callout callout-blue" id="googleHint">La connexion Google utilise une autorisation sécurisée. Vous pouvez retirer cet accès depuis votre compte Google.</div>
+        </section>
+        <section class="tab-view hidden" id="tab-billing">
+          <div class="page-heading"><div><div class="eyebrow">VOTRE FORMULE</div><h1>Un tarif simple.</h1><p>Le coût du logiciel est distinct de votre budget publicitaire Google.</p></div></div>
+          <div class="billing-grid"><div class="surface price-card"><div class="price-badge">ABONNEMENT MENSUEL ENVISAGÉ</div><div class="price-big">99 € <span>/ mois</span></div><p>Gestion centralisée, préparation des campagnes et suivi de votre publicité. Fonctionnalités activées progressivement.</p><div id="subscriptionStatus" class="subscription-status">Abonnement non activé</div><div class="billing-actions" id="billingActions"></div></div>
+          <div class="surface price-details"><h3>Vous contrôlez vos dépenses.</h3><p><span>✓</span> Vous fixez le budget moyen de Google Ads.</p><p><span>✓</span> Les factures Google sont séparées.</p><p><span>✓</span> La publicité ne commence pas simplement en vous abonnant.</p><p><span>✓</span> Les éventuelles économies sont des estimations documentées, jamais des promesses.</p></div></div>
+        </section>
+      </div>
+    </div>
+  </main>
+  <div id="authOverlay" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+    <div class="modal auth-modal"><button id="closeAuth" type="button" class="modal-close" aria-label="Fermer">×</button><div class="modal-mark">A✳</div><h2 id="authTitle">Créer mon compte artisan</h2><p>Votre espace personnel. Vous pourrez modifier tous vos réglages à tout moment.</p>
+      <form id="authForm"><label class="form-field">Adresse email<input id="authEmail" type="email" autocomplete="email" required placeholder="vous@entreprise.fr"></label><label class="form-field">Mot de passe<input id="authPassword" type="password" minlength="12" maxlength="160" autocomplete="new-password" required placeholder="12 caractères minimum"></label><p class="feedback feedback-error" id="authFeedback" role="alert"></p><button class="btn btn-green btn-full" id="authSubmit" type="submit">Créer mon compte <span>→</span></button></form>
+      <button id="authSwitch" class="auth-switch">J'ai déjà un compte · Se connecter</button><p class="legal-note">Version pilote : l'email n'est pas encore vérifié automatiquement. N'utilisez pas de mot de passe réutilisé ailleurs.</p>
+    </div>
+  </div>
+  <div id="toast" class="toast hidden" role="status"></div>
+</body>
+</html>
