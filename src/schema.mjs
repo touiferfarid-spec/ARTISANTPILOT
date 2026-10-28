@@ -23,6 +23,10 @@ export const migrations = [
     conversion_verified BOOLEAN NOT NULL DEFAULT false,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`,
+  `ALTER TABLE profiles ADD COLUMN IF NOT EXISTS city_code TEXT`,
+  `ALTER TABLE profiles ADD COLUMN IF NOT EXISTS city_lat DOUBLE PRECISION`,
+  `ALTER TABLE profiles ADD COLUMN IF NOT EXISTS city_lng DOUBLE PRECISION`,
+  `ALTER TABLE profiles ADD COLUMN IF NOT EXISTS radius_km INTEGER NOT NULL DEFAULT 20`,
   `CREATE TABLE IF NOT EXISTS oauth_states (
     state_hash TEXT PRIMARY KEY,
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,

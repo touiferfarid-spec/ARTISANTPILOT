@@ -23,6 +23,7 @@ function setTab(tab,changeHash=true){
   for(const b of document.querySelectorAll('.side-link'))b.classList.toggle('active',b.dataset.tab===tab);
   if(changeHash)history.replaceState({},'',location.pathname+'#'+tab);
   window.scrollTo(0,0);
+  if(tab==='setup')window.ArtisanCoverage?.activate();
   if(tab==='connections')loadConnections();if(tab==='billing')loadBilling();if(tab==='campaigns')loadDrafts();if(tab==='dashboard')loadMetrics();
 }
 async function boot(){try{const d=await fullApi('/api/me');state.user=d.user;}catch{state.user=null}loginUi();if(state.user)await loadProfile();}
@@ -49,6 +50,7 @@ function renderProfile(){
   const choice=document.querySelector('input[name="destination"][value="'+(p.destination||'site')+'"]');
   if(choice)choice.checked=true;
   $('budgetRange').value=Math.max(5,Math.min(150,Number(p.budget_eur)||30));
+  window.ArtisanCoverage?.hydrate(p);
   updateDestination();updateBudget();updateDashboard();
 }
 async function loadProfile(){
@@ -70,8 +72,11 @@ $('budgetRange').addEventListener('input',()=>{$('budget_eur').value=$('budgetRa
 $('profileForm').addEventListener('submit',async e=>{
   e.preventDefault();let values={};for(const k of ['business_name','job','city','website','ads_mode','daily_max_alert_percent'])values[k]=$(k).value;
   values.destination=document.querySelector('input[name="destination"]:checked').value;values.budget_eur=Number($('budget_eur').value);values.daily_max_alert_percent=Number(values.daily_max_alert_percent);
+  const location=window.ArtisanCoverage?.selection();
+  if(!location){$('profileFeedback').textContent='Choisissez d’abord une ville dans les suggestions.';return;}
+  Object.assign(values,location);
   const feedback=$('profileFeedback');feedback.textContent='Enregistrement...';
-  try{await fullApi('/api/profile',{method:'POST',body:values});state.profile={...state.profile,...values};feedback.textContent='✓ Modifications enregistrées';updateDashboard();toast('Votre activité a bien été enregistrée');}
+  try{const result=await fullApi('/api/profile',{method:'POST',body:values});state.profile={...state.profile,...values,city:result.location.name,city_code:result.location.code,city_lat:result.location.lat,city_lng:result.location.lng,radius_km:result.location.radiusKm};window.ArtisanCoverage?.hydrate(state.profile);feedback.textContent='✓ Modifications enregistrées';updateDashboard();toast('Votre activité a bien été enregistrée');}
   catch(err){feedback.textContent=err.message;toast(err.message,'error')}
 });
 function updateDashboard(){
@@ -129,7 +134,7 @@ $('createDraft').addEventListener('click',async()=>{
 function showDraft(draft){
   const plan=draft.plan||{},box=$('campaignDraft');$('draftEmpty').classList.add('hidden');box.classList.remove('hidden');
   const headlines=plan.headlines||[],descriptions=plan.descriptions||[];
-  box.innerHTML=`<div class="surface draft-card"><div class="draft-header"><div><h3>${safe(plan.jobLabel||'Campagne')} · ${safe(plan.city||'')}</h3><small>Budget ${money(plan.dailyBudgetEuro||0)}/jour · ${safe(plan.destination==='site'?'Site web':plan.destination==='profile'?'Fiche Google':'Site + fiche Google')}</small></div><span class="draft-badge">${safe(draft.status||'Brouillon')}</span></div>
+  box.innerHTML=`<div class="surface draft-card"><div class="draft-header"><div><h3>${safe(plan.jobLabel||'Campagne')} · ${safe(plan.city||'')}</h3><small>${plan.proximity?'Rayon '+safe(plan.proximity.radiusKm)+' km · ':''}Budget ${money(plan.dailyBudgetEuro||0)}/jour · ${safe(plan.destination==='site'?'Site web':plan.destination==='profile'?'Fiche Google':'Site + fiche Google')}</small></div><span class="draft-badge">${safe(draft.status||'Brouillon')}</span></div>
   <div class="draft-grid"><div><h4>Recherches à cibler</h4><div class="chips">${(plan.keywords||[]).map(x=>`<span class="chip">${safe(x.text)}</span>`).join('')}</div></div>
   <div><h4>Recherches à éviter (à vérifier)</h4><div class="chips">${(plan.negatives||[]).map(x=>`<span class="chip negative">${safe(x.text)}</span>`).join('')}</div></div>
   <div><h4>Titres des annonces</h4><div class="chips">${headlines.map(x=>`<span class="chip">${safe(x)}</span>`).join('')}</div></div>

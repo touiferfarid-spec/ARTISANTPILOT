@@ -1,4 +1,5 @@
 import {config} from './config.mjs';
+import {validCoordinates,validateRadiusKm} from './locations.mjs';
 import {encrypt,decrypt,safeCustomerId} from './security.mjs';
 const GOOGLE_ROOT='https://googleads.googleapis.com';
 export class ProviderError extends Error {
@@ -117,7 +118,14 @@ export function buildSearchCampaignOperations(plan,customerId) {
   if(!customer)throw new Error('Identifiant client Google Ads invalide');
   if(plan.kind!=='SEARCH'||plan.destination!=='site')throw new Error('Ce constructeur ne gère que les campagnes Search vers un site web. Les fiches Google nécessitent un parcours distinct.');
   if(!/^https:\/\/[^\s]+\.[^\s]+/i.test(plan.website||''))throw new Error('Site HTTPS manquant');
-  if(!/^\d{3,10}$/.test(String(plan.geoTargetId||'')))throw new Error('Ciblage local Google non vérifié');
+  const validGeoId=/^\d{3,10}$/.test(String(plan.geoTargetId||''));
+  const prox=plan.proximity;
+  let geoCriterion;
+  if(prox && validCoordinates(prox.lat,prox.lng)){
+    const radius=validateRadiusKm(prox.radiusKm);
+    geoCriterion={proximity:{geoPoint:{latitudeInMicroDegrees:Math.round(Number(prox.lat)*1e6),longitudeInMicroDegrees:Math.round(Number(prox.lng)*1e6)},radius,radiusUnits:'KILOMETERS'}};
+  }else if(validGeoId){geoCriterion={location:{geoTargetConstant:`geoTargetConstants/${plan.geoTargetId}`}}}
+  else throw new Error('Ciblage local Google non vérifié');
   if(!Array.isArray(plan.headlines)||plan.headlines.length<3||plan.headlines.some(x=>x.length>30))throw new Error('Titres de publicité non valides');
   if(!Array.isArray(plan.descriptions)||plan.descriptions.length<2||plan.descriptions.some(x=>x.length>90))throw new Error('Descriptions non valides');
   const daily=Number(plan.dailyBudgetEuro);
@@ -127,7 +135,7 @@ export function buildSearchCampaignOperations(plan,customerId) {
   const operations=[
     {campaignBudgetOperation:{create:{resourceName:budget,name:name+' | Budget',amountMicros:String(Math.round(daily*1e6)),deliveryMethod:'STANDARD',explicitlyShared:false}}},
     {campaignOperation:{create:{resourceName:campaign,name,campaignBudget:budget,advertisingChannelType:'SEARCH',status:'PAUSED',manualCpc:{},networkSettings:{targetGoogleSearch:true,targetSearchNetwork:false,targetContentNetwork:false, targetPartnerSearchNetwork:false}}}},
-    {campaignCriterionOperation:{create:{campaign,location:{geoTargetConstant:`geoTargetConstants/${plan.geoTargetId}`}}}},
+    {campaignCriterionOperation:{create:{campaign,...geoCriterion}}},
     {adGroupOperation:{create:{resourceName:group,campaign,name:'Services locaux',status:'ENABLED',type:'SEARCH_STANDARD',cpcBidMicros:'2000000'}}},
   ];
   for(const kw of plan.keywords.slice(0,20))operations.push({adGroupCriterionOperation:{create:{adGroup:group,status:'ENABLED',keyword:{text:kw.text,matchType:kw.matchType||'PHRASE'}}}});

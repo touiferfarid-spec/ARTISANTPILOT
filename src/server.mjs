@@ -10,6 +10,7 @@ import {suggestExclusions,performanceAlert} from './suggestions.mjs';
 import {oauthUrl,exchangeCode,storeTokens,requestAds,listAccounts,searchAds,dailyMetrics,searchTerms,geoSuggestions,createCustomer,createPausedCampaign,enableCampaign,listBusinessAccounts,linkBusinessLocationAssets,inviteNewCustomerAdmin,ProviderError} from './ads.mjs';
 import {checkStripeSignature,createCheckout,createPortal,applyStripeEvent} from './billing.mjs';
 import {generateOptionalCopy} from './assistant.mjs';
+import {findCityByCode, suggestCities, validateRadiusKm, normalizeSearchText} from './locations.mjs';
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
 const limits=new Map();
 let pool=null,dbReady=false,dbError='';
@@ -55,14 +56,14 @@ async function selectedAccount(userId){
 async function requireAccount(userId,customerId){const account=await selectedAccount(userId);if(!account||account.customer_id!==customerId)throw new HttpError('Sélectionnez un compte Google Ads autorisé dans votre espace.',403);return account;}
 async function getProfile(userId){const x=await query('SELECT * FROM profiles WHERE user_id=$1',[userId]);return x.rows[0]||null;}
 async function view(req,res,p){
-  const file=p==='/'?'index.html':p==='/app.js'?'app.js':p==='/style.css'?'style.css':null;
+  const file=p==='/'?'index.html':p==='/app.js'?'app.js':p==='/coverage.js'?'coverage.js':p==='/style.css'?'style.css':null;
   if(!file)throw new HttpError('Page introuvable',404);
   const data=await fs.readFile(path.join(ROOT,'../public',file));
   res.writeHead(200,secureHeaders({'content-type':file.endsWith('.html')?'text/html; charset=utf-8':file.endsWith('.js')?'application/javascript; charset=utf-8':'text/css; charset=utf-8','cache-control':file==='index.html'?'no-store':'public, max-age=300'}));res.end(data);
 }
 async function handle(req,res){
   const url=new URL(req.url,config.baseUrl),p=url.pathname,m=req.method;
-  if(m==='GET'&&['/','/app.js','/style.css'].includes(p))return view(req,res,p);
+  if(m==='GET'&&['/','/app.js','/coverage.js','/style.css'].includes(p))return view(req,res,p);
   if(p==='/api/health')return send(res,{status:dbReady?'ok':'degraded',database:dbReady,integrations:integrationsConfigured(),writes:{accountCreation:config.allowAccountCreation,campaignCreation:config.allowCampaignWrites,activation:config.allowActivation,locationSync:config.allowLocationSync},message:dbReady?'Base active, API externes selon configuration':'La base de données doit être initialisée'},dbReady?200:503);
   if(!p.startsWith('/api/'))throw new HttpError('Page introuvable',404);
   if(!dbReady)throw new HttpError('Base de données indisponible',503);
@@ -106,15 +107,30 @@ async function handle(req,res){
   }
   const a=await sessionUser(req);
   if(!a)throw new HttpError('Connectez-vous pour accéder à votre espace.',401);
+  if(p==='/api/locations/suggest'&&m==='GET'){
+    rateGuard(req,'locations',50,60000);
+    const q=String(url.searchParams.get('q')||'');
+    return send(res,{cities:await suggestCities(q)});
+  }
+  if(p==='/api/maps/config'&&m==='GET')return send(res,{googleMapsConfigured:Boolean(config.mapsBrowserKey),browserKey:config.mapsBrowserKey||null,provider:config.mapsBrowserKey?'google':'openstreetmap'});
   if(p==='/api/profile'&&m==='GET'){const profile=await getProfile(a.id);return send(res,{profile});}
   if(p==='/api/profile'&&m==='POST'){
-    const x=await readJson(req),job=String(x.job||'').toLowerCase(),city=String(x.city||'').trim(),business=String(x.business_name||'').trim(),website=String(x.website||'').trim(),destination=String(x.destination||'site'),budget=Number(x.budget_eur),adsMode=String(x.ads_mode||'new'),alert=Number(x.daily_max_alert_percent||25);
-    if(!/^[a-z]+$/.test(job)||job.length>50||!city||city.length>90||business.length>120||!['site','profile','both'].includes(destination)||!['new','existing'].includes(adsMode)||!Number.isFinite(budget)||budget<5||budget>5000||![10,25,50,100].includes(alert))throw new HttpError('Vérifiez votre métier, votre ville et votre budget.');
+    const x=await readJson(req);
+    const job=String(x.job||'').toLowerCase(),cityInput=String(x.city||'').trim(),business=String(x.business_name||'').trim(),website=String(x.website||'').trim(),destination=String(x.destination||'site'),budget=Number(x.budget_eur),adsMode=String(x.ads_mode||'new'),alert=Number(x.daily_max_alert_percent||25);
+    const radius=validateRadiusKm(x.radius_km===undefined?20:x.radius_km);
+    if(!/^[a-z]+$/.test(job)||job.length>50||!cityInput||cityInput.length>90||business.length>120||!['site','profile','both'].includes(destination)||!['new','existing'].includes(adsMode)||!Number.isFinite(budget)||budget<5||budget>5000||![10,25,50,100].includes(alert))throw new HttpError('Vérifiez votre métier, votre ville et votre budget.');
     if(website){try{const u=new URL(website);if(u.protocol!=='https:'||!u.hostname.includes('.')||u.username||u.password)throw Error()}catch{throw new HttpError('Le site doit être une adresse HTTPS valide.')}}
-    await query(`INSERT INTO profiles(user_id,business_name,job,city,website,destination,budget_eur,ads_mode,daily_max_alert_percent) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
-      ON CONFLICT(user_id) DO UPDATE SET business_name=EXCLUDED.business_name,job=EXCLUDED.job,city=EXCLUDED.city,website=EXCLUDED.website,destination=EXCLUDED.destination,budget_eur=EXCLUDED.budget_eur,ads_mode=EXCLUDED.ads_mode,daily_max_alert_percent=EXCLUDED.daily_max_alert_percent,geo_target_id=CASE WHEN profiles.city=EXCLUDED.city THEN profiles.geo_target_id ELSE NULL END,updated_at=now()`,
-      [a.id,business,job,city,website,destination,budget,adsMode,alert]);
-    await audit(a.id,'profile.save',{job,city,destination,budget});return send(res,{saved:true});
+    const prior=await getProfile(a.id);
+    const code=String(x.city_code||((prior?.city_code&&normalizeSearchText(prior.city)===normalizeSearchText(cityInput))?prior.city_code:'')).trim();
+    if(!code)throw new HttpError('Choisissez votre ville dans la liste de suggestions.',422);
+    let selectedCity;
+    try{selectedCity=await findCityByCode(code)}catch(e){throw new HttpError('Impossible de vérifier votre commune : '+e.message,422)}
+    if(normalizeSearchText(selectedCity.name)!==normalizeSearchText(cityInput))throw new HttpError('La ville a été modifiée : sélectionnez-la à nouveau dans les suggestions.',422);
+    await query(`INSERT INTO profiles(user_id,business_name,job,city,city_code,city_lat,city_lng,radius_km,website,destination,budget_eur,ads_mode,daily_max_alert_percent) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+      ON CONFLICT(user_id) DO UPDATE SET business_name=EXCLUDED.business_name,job=EXCLUDED.job,city=EXCLUDED.city,city_code=EXCLUDED.city_code,city_lat=EXCLUDED.city_lat,city_lng=EXCLUDED.city_lng,radius_km=EXCLUDED.radius_km,website=EXCLUDED.website,destination=EXCLUDED.destination,budget_eur=EXCLUDED.budget_eur,ads_mode=EXCLUDED.ads_mode,daily_max_alert_percent=EXCLUDED.daily_max_alert_percent,geo_target_id=CASE WHEN profiles.city_code=EXCLUDED.city_code THEN profiles.geo_target_id ELSE NULL END,updated_at=now()`,
+      [a.id,business,job,selectedCity.name,selectedCity.code,selectedCity.lat,selectedCity.lng,radius,website,destination,budget,adsMode,alert]);
+    await audit(a.id,'profile.save',{job,city:selectedCity.name,cityCode:selectedCity.code,radiusKm:radius,destination,budget});
+    return send(res,{saved:true,location:{name:selectedCity.name,code:selectedCity.code,lat:selectedCity.lat,lng:selectedCity.lng,radiusKm:radius}});
   }
   if(p==='/api/integrations'){
     const r=await query('SELECT provider FROM integrations WHERE user_id=$1',[a.id]);

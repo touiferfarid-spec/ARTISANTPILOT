@@ -13,6 +13,7 @@ export const config = {
   stripeKey: env.STRIPE_SECRET_KEY || '',
   stripePrice: env.STRIPE_PRICE_ID || '',
   stripeWebhook: env.STRIPE_WEBHOOK_SECRET || '',
+  mapsBrowserKey: env.GOOGLE_MAPS_BROWSER_KEY || '',
   openaiKey: env.OPENAI_API_KEY || '',
   openaiModel: env.OPENAI_MODEL || 'gpt-4.1-mini',
   cronToken: env.CRON_TOKEN || '',
