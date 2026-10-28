@@ -43,7 +43,10 @@ export async function accessToken(query,userId,provider='ads') {
 }
 export async function requestAds(query,userId,path,{body,loginCustomerId,method}={}) {
   const token=await accessToken(query,userId,'ads');
-  const headers={authorization:'Bearer '+token,'developer-token':config.developerToken};
+  const headers={authorization:'Bearer '+token};
+  // Since September 2026 Google Ads API access is bound to the OAuth Cloud project.
+  // Legacy developer tokens are optional and ignored; omit the header when unset.
+  if(config.developerToken)headers['developer-token']=config.developerToken;
   // listAccessibleCustomers explicitly has no login customer ID.
   const login=loginCustomerId===undefined ? config.mccId:loginCustomerId;
   if(login)headers['login-customer-id']=login;
