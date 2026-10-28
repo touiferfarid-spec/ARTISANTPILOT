@@ -9,7 +9,7 @@ const other = {nom:'Cognat-Lyonne',code:'03080',codeDepartement:'03',centre:{typ
 const mock = async url => ({
   ok:true, json:async () => String(url).includes('/69123?') ? lyon : [other, lyon]
 });
-const base = {job:'plombier',city:'Lyon',city_code:'69123',city_lat:45.758,city_lng:4.8351,radius_km:20,business_name:'Test',budget_eur:30,website:'https://example.fr',destination:'site'};
+const base = {job:'plombier',city:'Lyon',city_code:'69123',city_lat:45.758,city_lng:4.8351,radius_km:20,business_name:'Test',budget_eur:30,website:'https://example.fr',phone:'01 22 33 44 55',destination:'site'};
 
 test('commune autocomplete sorts exact Lyon first and returns trusted coordinates', async () => {
   const items = await suggestCities('Lyon',{fetcher:mock});

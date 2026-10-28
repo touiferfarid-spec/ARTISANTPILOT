@@ -28,7 +28,7 @@
         <div class="hero-copy">
           <div class="hero-label"><span class="hero-label-dot"></span> Votre assistant publicitaire pour artisans</div>
           <h1>Plus de clients.<br>Moins de <em>complications.</em></h1>
-          <p>Votre publicité sur Google, expliquée simplement. Choisissez ce que vous voulez promouvoir, indiquez votre ville et votre budget : ArtisanPilot vous accompagne pour préparer vos campagnes.</p>
+          <p>Indiquez votre site, votre ville, votre numéro professionnel et votre budget : ArtisanPilot prépare des annonces qui peuvent afficher un bouton Appeler.</p>
           <div class="hero-actions">
             <button id="heroStart" class="btn btn-green btn-large">Découvrir mon assistant <span>→</span></button>
             <a href="#fonctionnement" class="hero-secondary">Comment ça marche <span>↘</span></a>
@@ -51,7 +51,7 @@
       <h2>3 étapes. <span>Et c'est tout.</span></h2>
       <p>Plus besoin de naviguer dans des dizaines de réglages publicitaires. L'application parle votre langage.</p>
       <div class="how-cards">
-        <div class="how-card"><div class="how-icon">01</div><h3>Présentez votre entreprise</h3><p>Votre métier, votre ville et votre site ou votre fiche Google.</p></div>
+        <div class="how-card"><div class="how-icon">01</div><h3>Présentez votre entreprise</h3><p>Votre métier, votre ville, votre site et votre numéro professionnel.</p></div>
         <div class="how-card"><div class="how-icon">02</div><h3>Définissez votre budget</h3><p>Vous choisissez votre budget moyen. On vous explique les variations possibles.</p></div>
         <div class="how-card"><div class="how-icon">03</div><h3>Suivez ce qui compte</h3><p>Vos dépenses, vos appels et vos demandes, une fois votre compte connecté.</p></div>
       </div>
@@ -97,7 +97,7 @@
                 <div id="citySuggestions" class="city-suggestions hidden" role="listbox" aria-label="Villes proposées"></div>
                 <small id="cityFeedback" class="city-feedback">Choisissez une ville parmi les suggestions.</small>
               </div>
-              <label class="form-field">Adresse de votre site (facultatif)<input id="website" name="website" type="url" placeholder="https://mon-entreprise.fr"></label>
+              <label class="form-field">Adresse du site de votre entreprise<input id="website" name="website" type="url" placeholder="https://mon-entreprise.fr" required></label>
             </div>
             <section class="coverage-panel" aria-labelledby="coverageTitle">
               <div class="coverage-heading"><div><h3 id="coverageTitle">Votre zone d'intervention</h3><p>Jusqu'où pouvez-vous vous déplacer pour intervenir chez vos clients ?</p></div><strong id="coverageRadiusValue" class="coverage-radius-value">20 km</strong></div>
@@ -107,14 +107,12 @@
               <div class="coverage-bottom"><span id="coverageLocationLabel">Ville non sélectionnée</span><span id="coverageMapProvider">Carte interactive</span></div>
               <p class="coverage-disclaimer">Le cercle indique un rayon à vol d'oiseau. Le ciblage réel des annonces peut varier selon les règles Google Ads.</p>
             </section>
-            <div class="form-divider"></div>
-            <h3>Que voulez-vous mettre en avant ?</h3>
-            <div class="option-grid" id="destinationOptions">
-              <label class="option-card selected"><input type="radio" name="destination" value="site" checked><span class="option-icon">◎</span><b>Mon site internet</b><small>Pour attirer des visites et des demandes de devis.</small></label>
-              <label class="option-card"><input type="radio" name="destination" value="profile"><span class="option-icon">⌖</span><b>Ma fiche Google</b><small>Annonces locales selon votre éligibilité.</small></label>
-              <label class="option-card"><input type="radio" name="destination" value="both"><span class="option-icon">✳</span><b>Les deux</b><small>Site web + annonces locales compatibles.</small></label>
+            <div class="form-grid">
+              <label class="form-field">Numéro professionnel à afficher dans vos annonces<input id="phone" name="phone" type="tel" autocomplete="tel" inputmode="tel" maxlength="40" placeholder="06 12 34 56 78" required><small>Google pourra proposer un bouton Appeler sur les annonces éligibles. Utilisez le numéro réel de votre entreprise.</small></label>
+              <div class="site-call-info"><span class="call-icon">☎</span><div><strong>Site internet + appels</strong><p>Les clients peuvent visiter votre site ou vous appeler directement depuis l'annonce quand Google affiche le bouton d'appel.</p></div></div>
             </div>
-            <div id="localNotice" class="form-tip hidden">La publicité directement vers une fiche Google n'est pas disponible pour tous les artisans. Nous vérifierons ce qui est possible pour votre établissement.</div>
+            <div id="destinationOptions" class="hidden"><label><input type="radio" name="destination" value="site" checked></label></div>
+            <div id="localNotice" class="hidden"></div>
             <div class="form-divider"></div>
             <div class="budget-header"><div><h3>Combien voulez-vous investir sur Google ?</h3><p>C'est le budget de publicité, payé directement à Google.</p></div><div class="budget-input"><input id="budget_eur" type="number" min="5" max="5000" step="5" value="30" aria-label="Budget quotidien"> <span>€ / jour</span></div></div>
             <input type="range" id="budgetRange" class="budget-range" min="5" max="150" step="5" value="30">
@@ -125,7 +123,7 @@
           </form>
         </section>
         <section class="tab-view hidden" id="tab-campaigns">
-          <div class="page-heading"><div><div class="eyebrow">ÉTAPE 2</div><h1>Votre prochaine publicité.</h1><p>Un brouillon adapté à votre métier, que vous gardez le droit de vérifier.</p></div><button id="createDraft" class="btn btn-green">Préparer ma publicité <span>✳</span></button></div>
+          <div class="page-heading"><div><div class="eyebrow">ÉTAPE 2</div><h1>Votre prochaine publicité.</h1><p>Des annonces vers votre site, avec un bouton d’appel lorsque Google l’affiche.</p></div><button id="createDraft" class="btn btn-green">Préparer ma publicité <span>✳</span></button></div>
           <div id="draftEmpty" class="surface campaign-empty"><div class="big-icon">✳</div><h3>Votre assistant est prêt.</h3><p>Il préparera des annonces et des recherches pertinentes pour votre activité. Les campagnes sont toujours mises en pause avant validation.</p><button class="btn btn-light" data-goto="setup">Vérifier mon activité</button></div>
           <div id="campaignDraft" class="hidden"></div>
           <div class="surface connection-card" style="margin-top:17px"><div class="panel-heading"><div><h3>Recherches à surveiller</h3><p>Vérifiez ce qui coûte de l’argent sans apporter de résultat.</p></div><button id="loadRecommendations" class="btn btn-light btn-small">Analyser mon compte</button></div><div id="recommendationsBox" class="notice-list"><p class="footnote">Aucune exclusion automatique. Les suggestions se baseront uniquement sur les données réelles de Google Ads.</p></div></div>

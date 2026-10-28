@@ -1,4 +1,5 @@
 import {validCoordinates,validateRadiusKm} from './locations.mjs';
+import {normalizeFrenchPhone} from './phone.mjs';
 const JOBS = {
   plombier: {
     label:'Plomberie', variants:['plombier','dépannage plomberie','urgence plomberie','réparation fuite'],
@@ -36,8 +37,11 @@ export function generatePlan(profile) {
     `Intervention à ${city} et alentours. Expliquez-nous votre besoin et obtenez une réponse.`,
     `Contactez un artisan à ${city} pour vos besoins de ${data.label.toLowerCase()}.`,
   ]).filter(x=>x.length<=90);
-  const destination=profile.destination||'site';
+  // Every new Search campaign lands on the artisan's own site.
+  const destination='site';
   const website=clean(profile.website||'');
+  let callPhone='';
+  try{callPhone=normalizeFrenchPhone(profile.phone)}catch{}
   const verifiedSite=/^https:\/\/[a-z0-9.-]+\.[a-z]{2,}(\/[^\s]*)?$/i.test(website);
   let proximity=null;
   if(profile.city_code && validCoordinates(profile.city_lat,profile.city_lng)){
@@ -45,7 +49,7 @@ export function generatePlan(profile) {
   }
   const warnings=[];
   if(!verifiedSite)warnings.push('Site HTTPS vérifié obligatoire pour une campagne Search classique.');
-  if(destination!=='site')warnings.push('Publicité de fiche Google : éligibilité locale et association Business Profile à vérifier.');
+  if(!callPhone)warnings.push('Numéro professionnel manquant : renseignez-le avant de valider le bouton d’appel Google Ads.');
   if(!proximity&&!profile.geo_target_id)warnings.push('Sélectionnez et validez la ville et le rayon d’intervention avant de publier.');
   if(!profile.conversion_verified)warnings.push('Tracking des appels et formulaires non validé.');
   return {
@@ -53,6 +57,7 @@ export function generatePlan(profile) {
     keywords, negatives:data.negatives.map(text=>({text,matchType:'PHRASE'})),
     headlines:headlines.slice(0,15), descriptions:descriptions.slice(0,4),
     geoTargetId:profile.geo_target_id||null, proximity,
+    callPhone, callCountryCode:'FR', callTrackingNote:'Mesure des appels réels à vérifier dans les paramètres Google Ads.',
     recommendedBidStrategy:'MAXIMIZE_CLICKS_INITIAL',
     status:'draft', warnings,
     createdBy:'ArtisanPilot',

@@ -44,7 +44,7 @@ for(const b of document.querySelectorAll('[data-goto]'))b.addEventListener('clic
 window.addEventListener('hashchange',()=>{if(state.user&&['dashboard','setup','campaigns','connections','billing'].includes(location.hash.slice(1)))setTab(location.hash.slice(1),false)});
 function renderProfile(){
   const p=state.profile;if(!p)return;
-  for(const key of ['business_name','job','city','website','destination','budget_eur','ads_mode','daily_max_alert_percent']){
+  for(const key of ['business_name','job','city','website','phone','destination','budget_eur','ads_mode','daily_max_alert_percent']){
     const e=$(key);if(e&&p[key]!==undefined&&p[key]!==null)e.value=p[key];
   }
   const choice=document.querySelector('input[name="destination"][value="'+(p.destination||'site')+'"]');
@@ -70,13 +70,13 @@ function updateBudget(){
 $('budget_eur').addEventListener('input',()=>{const n=Number($('budget_eur').value);if(n<=150&&n>=5)$('budgetRange').value=n;updateBudget()});
 $('budgetRange').addEventListener('input',()=>{$('budget_eur').value=$('budgetRange').value;updateBudget()});
 $('profileForm').addEventListener('submit',async e=>{
-  e.preventDefault();let values={};for(const k of ['business_name','job','city','website','ads_mode','daily_max_alert_percent'])values[k]=$(k).value;
-  values.destination=document.querySelector('input[name="destination"]:checked').value;values.budget_eur=Number($('budget_eur').value);values.daily_max_alert_percent=Number(values.daily_max_alert_percent);
+  e.preventDefault();let values={};for(const k of ['business_name','job','city','website','phone','ads_mode','daily_max_alert_percent'])values[k]=$(k).value;
+  values.destination='site';values.budget_eur=Number($('budget_eur').value);values.daily_max_alert_percent=Number(values.daily_max_alert_percent);
   const location=window.ArtisanCoverage?.selection();
   if(!location){$('profileFeedback').textContent='Choisissez d’abord une ville dans les suggestions.';return;}
   Object.assign(values,location);
   const feedback=$('profileFeedback');feedback.textContent='Enregistrement...';
-  try{const result=await fullApi('/api/profile',{method:'POST',body:values});state.profile={...state.profile,...values,city:result.location.name,city_code:result.location.code,city_lat:result.location.lat,city_lng:result.location.lng,radius_km:result.location.radiusKm};window.ArtisanCoverage?.hydrate(state.profile);feedback.textContent='✓ Modifications enregistrées';updateDashboard();toast('Votre activité a bien été enregistrée');}
+  try{const result=await fullApi('/api/profile',{method:'POST',body:values});state.profile={...state.profile,...values,phone:result.phone,city:result.location.name,city_code:result.location.code,city_lat:result.location.lat,city_lng:result.location.lng,radius_km:result.location.radiusKm};window.ArtisanCoverage?.hydrate(state.profile);feedback.textContent='✓ Modifications enregistrées';updateDashboard();toast('Votre activité a bien été enregistrée');}
   catch(err){feedback.textContent=err.message;toast(err.message,'error')}
 });
 function updateDashboard(){
@@ -85,7 +85,7 @@ function updateDashboard(){
   $('dailyDisplay').textContent=money(p?.budget_eur||30);$('monthDisplay').textContent=money((p?.budget_eur||30)*30.4);$('metricBudget').textContent=money(p?.budget_eur||30);
   renderChecklist();
 }
-function renderChecklist(){const done=[!!state.profile?.city,!!state.integrations?.googleAds?.connected,!!state.account];const names=['Présenter mon entreprise','Connecter Google Ads','Sélectionner mon compte Google'];$('stepsList').innerHTML=names.map((n,i)=>`<div class="check-item ${done[i]?'done':''}"><span class="dot">${done[i]?'✓':i+1}</span>${safe(n)}</div>`).join('')}
+function renderChecklist(){const done=[!!state.profile?.city&&!!state.profile?.website&&!!state.profile?.phone,!!state.integrations?.googleAds?.connected,!!state.account];const names=['Présenter mon entreprise','Connecter Google Ads','Sélectionner mon compte Google'];$('stepsList').innerHTML=names.map((n,i)=>`<div class="check-item ${done[i]?'done':''}"><span class="dot">${done[i]?'✓':i+1}</span>${safe(n)}</div>`).join('')}
 async function loadConnections(){
   try{
     const i=await fullApi('/api/integrations');state.integrations=i;
@@ -135,6 +135,7 @@ function showDraft(draft){
   const plan=draft.plan||{},box=$('campaignDraft');$('draftEmpty').classList.add('hidden');box.classList.remove('hidden');
   const headlines=plan.headlines||[],descriptions=plan.descriptions||[];
   box.innerHTML=`<div class="surface draft-card"><div class="draft-header"><div><h3>${safe(plan.jobLabel||'Campagne')} · ${safe(plan.city||'')}</h3><small>${plan.proximity?'Rayon '+safe(plan.proximity.radiusKm)+' km · ':''}Budget ${money(plan.dailyBudgetEuro||0)}/jour · ${safe(plan.destination==='site'?'Site web':plan.destination==='profile'?'Fiche Google':'Site + fiche Google')}</small></div><span class="draft-badge">${safe(draft.status||'Brouillon')}</span></div>
+  <div class="call-preview"><div><span class="call-preview-label">Site de destination</span><strong>${safe(plan.website||'Non renseigné')}</strong></div><div><span class="call-preview-label">Bouton d'appel proposé</span><strong>☎ ${safe(plan.callPhone||'Numéro à renseigner')}</strong><small>Affichage selon l'éligibilité Google · suivi des appels à vérifier</small></div></div>
   <div class="draft-grid"><div><h4>Recherches à cibler</h4><div class="chips">${(plan.keywords||[]).map(x=>`<span class="chip">${safe(x.text)}</span>`).join('')}</div></div>
   <div><h4>Recherches à éviter (à vérifier)</h4><div class="chips">${(plan.negatives||[]).map(x=>`<span class="chip negative">${safe(x.text)}</span>`).join('')}</div></div>
   <div><h4>Titres des annonces</h4><div class="chips">${headlines.map(x=>`<span class="chip">${safe(x)}</span>`).join('')}</div></div>
