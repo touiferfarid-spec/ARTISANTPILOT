@@ -1,5 +1,6 @@
 import {config} from './config.mjs';
 import {validCoordinates,validateRadiusKm} from './locations.mjs';
+import {normalizeFrenchPhone} from './phone.mjs';
 import {encrypt,decrypt,safeCustomerId} from './security.mjs';
 const GOOGLE_ROOT='https://googleads.googleapis.com';
 export class ProviderError extends Error {
@@ -118,6 +119,8 @@ export function buildSearchCampaignOperations(plan,customerId) {
   if(!customer)throw new Error('Identifiant client Google Ads invalide');
   if(plan.kind!=='SEARCH'||plan.destination!=='site')throw new Error('Ce constructeur ne gère que les campagnes Search vers un site web. Les fiches Google nécessitent un parcours distinct.');
   if(!/^https:\/\/[^\s]+\.[^\s]+/i.test(plan.website||''))throw new Error('Site HTTPS manquant');
+  const callPhone=normalizeFrenchPhone(plan.callPhone);
+  if(!callPhone)throw new Error('Un numéro professionnel est nécessaire pour ajouter le bouton d’appel Google Ads.');
   const validGeoId=/^\d{3,10}$/.test(String(plan.geoTargetId||''));
   const prox=plan.proximity;
   let geoCriterion;
@@ -137,6 +140,9 @@ export function buildSearchCampaignOperations(plan,customerId) {
     {campaignOperation:{create:{resourceName:campaign,name,campaignBudget:budget,advertisingChannelType:'SEARCH',status:'PAUSED',manualCpc:{},networkSettings:{targetGoogleSearch:true,targetSearchNetwork:false,targetContentNetwork:false, targetPartnerSearchNetwork:false}}}},
     {campaignCriterionOperation:{create:{campaign,...geoCriterion}}},
     {adGroupOperation:{create:{resourceName:group,campaign,name:'Services locaux',status:'ENABLED',type:'SEARCH_STANDARD',cpcBidMicros:'2000000'}}},
+    // A separate call asset for this specific artisan, never shared across clients.
+    {assetOperation:{create:{resourceName:`customers/${customer}/assets/-4`,callAsset:{countryCode:'FR',phoneNumber:callPhone}}}},
+    {campaignAssetOperation:{create:{campaign,asset:`customers/${customer}/assets/-4`,fieldType:'CALL'}}},
   ];
   for(const kw of plan.keywords.slice(0,20))operations.push({adGroupCriterionOperation:{create:{adGroup:group,status:'ENABLED',keyword:{text:kw.text,matchType:kw.matchType||'PHRASE'}}}});
   for(const kw of plan.negatives.slice(0,20))operations.push({campaignCriterionOperation:{create:{campaign,negative:true,keyword:{text:kw.text,matchType:kw.matchType||'PHRASE'}}}});
