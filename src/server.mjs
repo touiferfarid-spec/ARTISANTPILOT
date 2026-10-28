@@ -56,14 +56,14 @@ async function selectedAccount(userId){
 async function requireAccount(userId,customerId){const account=await selectedAccount(userId);if(!account||account.customer_id!==customerId)throw new HttpError('Sélectionnez un compte Google Ads autorisé dans votre espace.',403);return account;}
 async function getProfile(userId){const x=await query('SELECT * FROM profiles WHERE user_id=$1',[userId]);return x.rows[0]||null;}
 async function view(req,res,p){
-  const file=p==='/'?'index.html':p==='/app.js'?'app.js':p==='/style.css'?'style.css':null;
+  const file=p==='/'?'index.html':p==='/app.js'?'app.js':p==='/coverage.js'?'coverage.js':p==='/style.css'?'style.css':null;
   if(!file)throw new HttpError('Page introuvable',404);
   const data=await fs.readFile(path.join(ROOT,'../public',file));
   res.writeHead(200,secureHeaders({'content-type':file.endsWith('.html')?'text/html; charset=utf-8':file.endsWith('.js')?'application/javascript; charset=utf-8':'text/css; charset=utf-8','cache-control':file==='index.html'?'no-store':'public, max-age=300'}));res.end(data);
 }
 async function handle(req,res){
   const url=new URL(req.url,config.baseUrl),p=url.pathname,m=req.method;
-  if(m==='GET'&&['/','/app.js','/style.css'].includes(p))return view(req,res,p);
+  if(m==='GET'&&['/','/app.js','/coverage.js','/style.css'].includes(p))return view(req,res,p);
   if(p==='/api/health')return send(res,{status:dbReady?'ok':'degraded',database:dbReady,integrations:integrationsConfigured(),writes:{accountCreation:config.allowAccountCreation,campaignCreation:config.allowCampaignWrites,activation:config.allowActivation,locationSync:config.allowLocationSync},message:dbReady?'Base active, API externes selon configuration':'La base de données doit être initialisée'},dbReady?200:503);
   if(!p.startsWith('/api/'))throw new HttpError('Page introuvable',404);
   if(!dbReady)throw new HttpError('Base de données indisponible',503);
