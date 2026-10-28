@@ -24,7 +24,7 @@ export const config = {
   dailyEnabled: env.DAILY_REPORTS_ENABLED === 'true',
 };
 export const integrationsConfigured = () => ({
-  google: Boolean(config.googleId && config.googleSecret && config.developerToken && /^[a-f0-9]{64}$/i.test(config.encryptionKey)),
+  google: Boolean(config.googleId && config.googleSecret && /^[a-f0-9]{64}$/i.test(config.encryptionKey)),
   business: Boolean(config.businessEnabled && config.googleId && config.googleSecret && /^[a-f0-9]{64}$/i.test(config.encryptionKey)),
   stripe: Boolean(config.stripeKey && config.stripePrice && config.stripeWebhook),
   ai: Boolean(config.openaiKey),
