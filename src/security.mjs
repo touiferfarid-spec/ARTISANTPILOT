@@ -53,6 +53,6 @@ export function secureHeaders(extra={}) {return {
   'X-Content-Type-Options': 'nosniff', 'X-Frame-Options':'DENY',
   'Referrer-Policy':'strict-origin-when-cross-origin','Cross-Origin-Resource-Policy':'same-origin',
   'Permissions-Policy':'camera=(), microphone=(), geolocation=()',
-  'Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; base-uri 'none'; object-src 'none'; form-action 'self'; frame-ancestors 'none'",
+  'Content-Security-Policy':"default-src 'self'; script-src 'self' https://maps.googleapis.com https://maps.gstatic.com https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: https://maps.googleapis.com https://maps.gstatic.com https://*.googleapis.com https://*.gstatic.com https://*.tile.openstreetmap.org; font-src 'self'; connect-src 'self' https://maps.googleapis.com https://maps.gstatic.com https://*.googleapis.com https://*.gstatic.com; base-uri 'none'; object-src 'none'; form-action 'self'; frame-ancestors 'none'",
   ...extra
 };}
