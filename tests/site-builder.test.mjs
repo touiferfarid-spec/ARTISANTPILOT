@@ -4,7 +4,7 @@ import {normalizeSiteInput,suggestDomains,renderLanding,safeCopy,makeSlug,trades
 
 const input={
   business_name:'Dupont Plomberie',job:'plombier',city:'Lyon',email:'contact@dupont.fr',
-  phone:'06 12 34 56 78',radius_km:20,services:['Recherche de fuite','Débouchage'],
+  phone:'06 12 34 56 78',radius_km:20,siret:'12345678901234',legal_address:'12 rue Exemple, 69003 Lyon',services:['Recherche de fuite','Débouchage'],
 };
 test('metiers et prestations disponibles',()=>{
   assert.ok(trades.plombier.services.includes('Recherche de fuite'));
