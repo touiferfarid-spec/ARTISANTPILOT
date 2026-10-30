@@ -1,6 +1,7 @@
 import http from 'node:http';
 import {normalizeSiteInput,makeSlug,suggestDomains,renderLanding,renderLegalPage,sitePreviewUrl,trades} from './site-builder.mjs';
 import {generateSiteCopy} from './site-copy.mjs';
+import {readTrackedCalls, listCallActions, configureCallActions} from './google-calls.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -172,6 +173,29 @@ async function handle(req,res){
     await audit(a.id,'site.published',{slug:item.slug});
     return send(res,{published:true,url:website,tracking:{click_to_call:'active',answered_calls:'requires_google_ads_configuration'},notice:'Page publiée. Les clics sont mesurés, pas encore les appels réellement décrochés.'});
   }
+  if(p==='/api/integrations/readiness'&&m==='GET'){
+    const site=await query('SELECT status FROM artisan_sites WHERE user_id=$1',[a.id]);
+    const acct=await selectedAccount(a.id);
+    const linked=await query("SELECT provider FROM integrations WHERE user_id=$1",[a.id]);
+    const sub=await query('SELECT status FROM subscriptions WHERE user_id=$1',[a.id]);
+    return send(res,{
+      hosting:dbReady,
+      generatedSitePublished:site.rows[0]?.status==='published',
+      googleOAuthReady:integrationsConfigured().google,
+      googleAccountLinked:Boolean(acct),
+      googleAccountManagerConfigured:Boolean(config.mccId),
+      googleAdsWritesEnabled:config.allowCampaignWrites,
+      conversionWritesEnabled:config.allowConversionWrites,
+      phoneClicksTracked:true,
+      answeredCallTracking:'requires_google_forwarding_number_and_real_test',
+      openaiConfigured:integrationsConfigured().ai,
+      stripeConfigured:integrationsConfigured().stripe,
+      subscriptionActive:['active','trialing'].includes(sub.rows[0]?.status),
+      registrarConfigured:integrationsConfigured().registrar,
+      domainPurchasing:'not_yet_implemented',
+      googleOAuthLinked:linked.rows.some(x=>x.provider==='ads')
+    });
+  }
   if(p==='/api/site/domains'&&m==='GET'){
     const r=await query('SELECT site FROM artisan_sites WHERE user_id=$1',[a.id]);
     if(!r.rows.length)throw new HttpError('Créez votre site pour recevoir des suggestions.',404);
@@ -300,6 +324,32 @@ async function handle(req,res){
     await query('INSERT INTO business_links(user_id,customer_id,business_account_id,asset_set) VALUES($1,$2,$3,$4)',[a.id,account.customer_id,businessAccountId,result.assetSet]);
     await audit(a.id,'google.business.linked',{customerId:account.customer_id,businessAccountId,assetSet:result.assetSet});
     return send(res,{linked:true,assetSet:result.assetSet,notice:result.notice});
+  }
+  if(p==='/api/google/calls'&&m==='GET'){
+    const account=await selectedAccount(a.id);
+    if(!account)throw new HttpError('Sélectionnez un compte Google Ads.',422);
+    return send(res,{customerId:account.customer_id,...await readTrackedCalls(query,a.id,account.customer_id)});
+  }
+  if(p==='/api/google/call-conversions'&&m==='GET'){
+    const account=await selectedAccount(a.id);
+    if(!account)throw new HttpError('Sélectionnez un compte Google Ads.',422);
+    const actions=await listCallActions(query,a.id,account.customer_id);
+    return send(res,{customerId:account.customer_id,actions:actions.map(x=>({name:x.name,type:x.type,status:x.status,resourceName:x.resourceName,phoneCallDurationSeconds:x.phoneCallDurationSeconds})),configured:actions.some(x=>x.type==='AD_CALL')&&actions.some(x=>x.type==='WEBSITE_CALL'),note:'L’installation de numéros de transfert sur le site et le test des appels réels restent nécessaires.'});
+  }
+  if(p==='/api/google/call-conversions/validate'&&m==='POST'){
+    const account=await selectedAccount(a.id);
+    if(!account)throw new HttpError('Sélectionnez un compte Google Ads.',422);
+    return send(res,{result:await configureCallActions(query,a.id,account.customer_id,{validateOnly:true}),note:'Validation uniquement, aucune conversion créée.'});
+  }
+  if(p==='/api/google/call-conversions/create'&&m==='POST'){
+    if(!config.allowConversionWrites)throw new HttpError('Création de conversions désactivée jusqu’à validation par l’administrateur.',503);
+    const account=await selectedAccount(a.id);
+    if(!account)throw new HttpError('Sélectionnez un compte Google Ads.',422);
+    const input=await readJson(req);
+    if(input.confirm!=='CREER LES CONVERSIONS')throw new HttpError('Confirmation explicite nécessaire.',422);
+    const result=await configureCallActions(query,a.id,account.customer_id,{validateOnly:false});
+    await audit(a.id,'google.call_conversions.created',{customerId:account.customer_id});
+    return send(res,{result,note:'Conversions créées. Les appels doivent encore être vérifiés sur un véritable compte Google Ads.'});
   }
   if(p==='/api/google/metrics'&&m==='GET'){
     const account=await selectedAccount(a.id);if(!account)throw new HttpError('Sélectionnez d’abord votre compte Google Ads.');
