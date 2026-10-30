@@ -1,4 +1,6 @@
 import http from 'node:http';
+import {normalizeSiteInput,makeSlug,suggestDomains,renderLanding,sitePreviewUrl,trades} from './site-builder.mjs';
+import {generateSiteCopy} from './site-copy.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -57,15 +59,23 @@ async function selectedAccount(userId){
 async function requireAccount(userId,customerId){const account=await selectedAccount(userId);if(!account||account.customer_id!==customerId)throw new HttpError('Sélectionnez un compte Google Ads autorisé dans votre espace.',403);return account;}
 async function getProfile(userId){const x=await query('SELECT * FROM profiles WHERE user_id=$1',[userId]);return x.rows[0]||null;}
 async function view(req,res,p){
-  const file=p==='/'?'index.html':p==='/privacy'||p==='/confidentialite'?'privacy.html':p==='/terms'||p==='/conditions'?'terms.html':p==='/app.js'?'app.js':p==='/coverage.js'?'coverage.js':p==='/style.css'?'style.css':null;
+  const file=p==='/studio'?'studio.html':p==='/studio.js'?'studio.js':p==='/studio.css'?'studio.css':p==='/landing.css'?'landing.css':p==='/site-track.js'?'site-track.js':p==='/'?'index.html':p==='/privacy'||p==='/confidentialite'?'privacy.html':p==='/terms'||p==='/conditions'?'terms.html':p==='/app.js'?'app.js':p==='/coverage.js'?'coverage.js':p==='/style.css'?'style.css':null;
   if(!file)throw new HttpError('Page introuvable',404);
   const data=await fs.readFile(path.join(ROOT,'../public',file));
-  res.writeHead(200,secureHeaders({'content-type':file.endsWith('.html')?'text/html; charset=utf-8':file.endsWith('.js')?'application/javascript; charset=utf-8':'text/css; charset=utf-8','cache-control':file==='index.html'?'no-store':'public, max-age=300'}));res.end(data);
+  res.writeHead(200,secureHeaders({'content-type':file.endsWith('.html')?'text/html; charset=utf-8':file.endsWith('.js')?'application/javascript; charset=utf-8':'text/css; charset=utf-8','cache-control':file==='index.html'||file==='studio.html'?'no-store':'public, max-age=300'}));res.end(data);
 }
 async function handle(req,res){
   const url=new URL(req.url,config.baseUrl),p=url.pathname,m=req.method;
-  if(m==='GET'&&['/','/privacy','/confidentialite','/terms','/conditions','/app.js','/coverage.js','/style.css'].includes(p))return view(req,res,p);
+  if(m==='GET'&&['/','/studio','/studio.js','/studio.css','/landing.css','/site-track.js','/privacy','/confidentialite','/terms','/conditions','/app.js','/coverage.js','/style.css'].includes(p))return view(req,res,p);
   if(p==='/api/health')return send(res,{status:dbReady?'ok':'degraded',database:dbReady,integrations:integrationsConfigured(),writes:{accountCreation:config.allowAccountCreation,campaignCreation:config.allowCampaignWrites,activation:config.allowActivation,locationSync:config.allowLocationSync},message:dbReady?'Base active, API externes selon configuration':'La base de données doit être initialisée'},dbReady?200:503);
+  if(m==='GET' && p.startsWith('/p/')){
+    const slug=decodeURIComponent(p.slice(3));
+    if(!/^[a-z0-9-]{5,90}$/.test(slug))throw new HttpError('Page introuvable',404);
+    const data=await query("SELECT site,slug,custom_domain,domain_verified FROM artisan_sites WHERE slug=$1 AND status='published'",[slug]);
+    if(!data.rows.length)throw new HttpError('Page introuvable',404);
+    const html=renderLanding({...data.rows[0].site,slug},{baseUrl:config.baseUrl});
+    res.writeHead(200,secureHeaders({'content-type':'text/html; charset=utf-8','cache-control':'public, max-age=120'}));return res.end(html);
+  }
   if(!p.startsWith('/api/'))throw new HttpError('Page introuvable',404);
   if(!dbReady)throw new HttpError('Base de données indisponible',503);
   if(p==='/api/stripe/webhook'&&m==='POST'){
@@ -82,6 +92,16 @@ async function handle(req,res){
     return runDailyReports(res);
   }
   if(!['GET','HEAD','OPTIONS'].includes(m)&&!trustedOrigin(req))throw new HttpError('Origine non autorisée',403);
+  if(p==='/api/site/call-click'&&m==='POST'){
+    rateGuard(req,'site-call',30);
+    const x=await readJson(req),slug=String(x.slug||'');
+    if(!/^[a-z0-9-]{5,90}$/.test(slug))throw new HttpError('Page invalide',422);
+    const found=await query("SELECT user_id FROM artisan_sites WHERE slug=$1 AND status='published'",[slug]);
+    if(!found.rows.length)throw new HttpError('Page introuvable',404);
+    const ip=String(req.headers['x-forwarded-for']||req.socket.remoteAddress||'').split(',')[0];
+    await query('INSERT INTO site_call_clicks(site_user_id,visitor_hash) VALUES($1,$2)',[found.rows[0].user_id,sha(ip+':'+new Date().toISOString().slice(0,10))]);
+    return send(res,{recorded:true,metric:'click_to_call',note:'Un clic ne confirme pas un appel décroché.'},202);
+  }
   if(p==='/api/auth/register'&&m==='POST'){
     rateGuard(req,'register',6,60000);
     const x=await readJson(req),email=String(x.email||'').trim().toLowerCase(),pw=String(x.password||'');
@@ -108,6 +128,42 @@ async function handle(req,res){
   }
   const a=await sessionUser(req);
   if(!a)throw new HttpError('Connectez-vous pour accéder à votre espace.',401);
+  if(p==='/api/site/trades'&&m==='GET')return send(res,{trades});
+  if(p==='/api/site'&&m==='GET'){
+    const r=await query('SELECT slug,site,status,custom_domain,domain_verified,updated_at FROM artisan_sites WHERE user_id=$1',[a.id]);
+    if(!r.rows.length)return send(res,{site:null});
+    const item=r.rows[0];const stats=await query("SELECT count(*)::int AS clicks FROM site_call_clicks WHERE site_user_id=$1 AND occurred_at>now()-interval '30 days'",[a.id]);
+    return send(res,{site:{...item.site,slug:item.slug,status:item.status,custom_domain:item.custom_domain,domain_verified:item.domain_verified,preview_url:sitePreviewUrl(config.baseUrl,item.slug),clicks_30d:stats.rows[0].clicks}});
+  }
+  if(p==='/api/site/generate'&&m==='POST'){
+    rateGuard(req,'site-generate',8,60000);
+    const input=normalizeSiteInput(await readJson(req));
+    const prior=await query('SELECT slug FROM artisan_sites WHERE user_id=$1',[a.id]);
+    const slug=prior.rows[0]?.slug||makeSlug(input);
+    const generated=await generateSiteCopy(input);
+    const site={...input,copy:generated.copy,copy_source:generated.source,slug};
+    await query(`INSERT INTO artisan_sites(user_id,slug,site,status) VALUES($1,$2,$3,'draft')
+      ON CONFLICT(user_id) DO UPDATE SET site=EXCLUDED.site,status='draft',domain_verified=false,custom_domain=NULL,updated_at=now()`,[a.id,slug,JSON.stringify(site)]);
+    await audit(a.id,'site.generated',{job:input.job,slug,source:generated.source});
+    return send(res,{site:{...site,status:'draft',preview_url:sitePreviewUrl(config.baseUrl,slug)},domains:suggestDomains(input),note:'Les domaines proposés ne sont pas encore vérifiés auprès d’un registrar.'},201);
+  }
+  if(p==='/api/site/publish'&&m==='POST'){
+    const r=await query("UPDATE artisan_sites SET status='published',updated_at=now() WHERE user_id=$1 RETURNING slug,site",[a.id]);
+    if(!r.rows.length)throw new HttpError('Générez votre site avant sa publication.',404);
+    const item=r.rows[0],website=sitePreviewUrl(config.baseUrl,item.slug);
+    const site=item.site;
+    const prior=await getProfile(a.id);
+    if(prior){
+      await query("UPDATE profiles SET website=$1,phone=$2,business_name=$3,job=$4,updated_at=now() WHERE user_id=$5",[website,site.phone,site.business_name,site.job,a.id]);
+    }
+    await audit(a.id,'site.published',{slug:item.slug});
+    return send(res,{published:true,url:website,tracking:{click_to_call:'active',answered_calls:'requires_google_ads_configuration'},notice:'Page publiée. Les clics sont mesurés, pas encore les appels réellement décrochés.'});
+  }
+  if(p==='/api/site/domains'&&m==='GET'){
+    const r=await query('SELECT site FROM artisan_sites WHERE user_id=$1',[a.id]);
+    if(!r.rows.length)throw new HttpError('Créez votre site pour recevoir des suggestions.',404);
+    return send(res,{suggestions:suggestDomains(r.rows[0].site),purchase_available:false,notice:'La disponibilité, les prix et la commande nécessitent un compte revendeur de domaines et une intégration de paiement.'});
+  }
   if(p==='/api/locations/suggest'&&m==='GET'){
     rateGuard(req,'locations',50,60000);
     const q=String(url.searchParams.get('q')||'');
@@ -121,7 +177,7 @@ async function handle(req,res){
     const radius=validateRadiusKm(x.radius_km===undefined?20:x.radius_km);
     if(!/^[a-z]+$/.test(job)||job.length>50||!cityInput||cityInput.length>90||business.length>120||!['site','profile','both'].includes(destination)||!['new','existing'].includes(adsMode)||!Number.isFinite(budget)||budget<5||budget>5000||![10,25,50,100].includes(alert))throw new HttpError('Vérifiez votre métier, votre ville et votre budget.');
     if(website){try{const u=new URL(website);if(u.protocol!=='https:'||!u.hostname.includes('.')||u.username||u.password)throw Error()}catch{throw new HttpError('Le site doit être une adresse HTTPS valide.')}}
-    if(!website)throw new HttpError('Ajoutez le site internet de votre entreprise pour vos annonces.',422);
+    if(!website)throw new HttpError('Créez votre site depuis le studio avant de préparer votre publicité.',422);
     let phone;
     try{phone=normalizeFrenchPhone(x.phone)}catch(e){throw new HttpError(e.message,422)}
     if(!phone)throw new HttpError('Ajoutez un numéro professionnel pour le bouton d’appel Google Ads.',422);
