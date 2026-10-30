@@ -10,6 +10,8 @@ export const config = {
   developerToken: env.GOOGLE_ADS_DEVELOPER_TOKEN || '',
   mccId: (env.GOOGLE_ADS_LOGIN_CUSTOMER_ID || '').replace(/\D/g, ''),
   encryptionKey: env.OAUTH_ENCRYPTION_KEY || '',
+  registrarUser: env.OPENPROVIDER_USERNAME || '',
+  registrarPassword: env.OPENPROVIDER_PASSWORD || '',
   stripeKey: env.STRIPE_SECRET_KEY || '',
   stripePrice: env.STRIPE_PRICE_ID || '',
   stripeWebhook: env.STRIPE_WEBHOOK_SECRET || '',
@@ -28,5 +30,7 @@ export const integrationsConfigured = () => ({
   google: Boolean(config.googleId && config.googleSecret && /^[a-f0-9]{64}$/i.test(config.encryptionKey)),
   business: Boolean(config.businessEnabled && config.googleId && config.googleSecret && /^[a-f0-9]{64}$/i.test(config.encryptionKey)),
   stripe: Boolean(config.stripeKey && config.stripePrice && config.stripeWebhook),
+  registrar: Boolean(config.registrarUser && config.registrarPassword),
+  callMeasurement: Boolean(config.googleId && config.googleSecret && config.mccId),
   ai: Boolean(config.openaiKey),
 });
