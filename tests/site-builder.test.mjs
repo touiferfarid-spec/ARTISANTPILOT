@@ -40,3 +40,16 @@ test('copy utilise les informations verifiees',()=>{
   assert.equal(copy.heading,'Plombier à Lyon');
   assert.equal(copy.cta,'Appeler maintenant');
 });
+
+test('brouillon sans informations légales',()=>{
+ const draft=normalizeSiteInput({...input,siret:'',legal_address:''});
+ assert.equal(draft.siret,'');
+ assert.equal(draft.legal_address,'');
+ const page=renderLanding({...draft,slug:'test-artisan-123456'},{baseUrl:'https://example.com',preview:true});
+ assert.ok(page.includes('href="tel:+33612345678"'));
+ assert.ok(!page.includes('SIRET : '));
+ assert.ok(!page.includes('/site-track.js'));
+});
+test('SIRET partiel produit un message explicite',()=>{
+ assert.throws(()=>normalizeSiteInput({...input,siret:'123'}),/14 chiffres/);
+});
