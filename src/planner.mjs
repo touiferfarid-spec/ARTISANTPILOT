@@ -17,7 +17,12 @@ const clean=x=>String(x||'').trim().replace(/\s+/g,' ');
 const unique=arr=>[...new Set(arr.map(clean).filter(Boolean))];
 export function generatePlan(profile) {
   const job = String(profile.job||'plombier').toLowerCase();
-  const data=JOBS[job]||JOBS.plombier;
+  const data=JOBS[job]||{
+    label:profile.job_label||job,
+    variants:[profile.job_label||job,...(Array.isArray(profile.services)?profile.services.slice(0,4):[])],
+    services:Array.isArray(profile.services)?profile.services:['Demandez un devis'],
+    negatives:['emploi','formation','stage','salaire','cours','gratuit','tutoriel']
+  };
   const city=clean(profile.city||'');
   const businessName=clean(profile.business_name||'Votre artisan');
   const budget=Number(profile.budget_eur||30);
