@@ -148,8 +148,10 @@ async function handle(req,res){
   }
   if(p==='/api/site/generate'&&m==='POST'){
     rateGuard(req,'site-generate',8,60000);
-    const input=normalizeSiteInput(await readJson(req));
-    const city=await findCityByCode(input.city_code);
+    let input;
+    try{input=normalizeSiteInput(await readJson(req));}catch(e){throw new HttpError(e.message,422)}
+    let city;
+    try{city=await findCityByCode(input.city_code);}catch(e){throw new HttpError(e.message,422)}
     if(normalizeSearchText(city.name)!==normalizeSearchText(input.city))throw new HttpError('Choisissez une commune dans les suggestions.',422);
     const prior=await query('SELECT slug FROM artisan_sites WHERE user_id=$1',[a.id]);
     const slug=prior.rows[0]?.slug||makeSlug(input);
@@ -161,8 +163,13 @@ async function handle(req,res){
     return send(res,{site:{...site,status:'draft',preview_url:sitePreviewUrl(config.baseUrl,slug)},domains:suggestDomains(input),note:'Les domaines proposés ne sont pas encore vérifiés auprès d’un registrar.'},201);
   }
   if(p==='/api/site/publish'&&m==='POST'){
-    const r=await query("UPDATE artisan_sites SET status='published',updated_at=now() WHERE user_id=$1 RETURNING slug,site",[a.id]);
-    if(!r.rows.length)throw new HttpError('Générez votre site avant sa publication.',404);
+    const prior=await query('SELECT site FROM artisan_sites WHERE user_id=$1',[a.id]);
+    if(!prior.rows.length)throw new HttpError('Générez votre site avant sa publication.',404);
+    const legal=await readJson(req);
+    const siteLegal={...prior.rows[0].site,siret:String(legal.siret??prior.rows[0].site.siret??'').replace(/\s/g,''),legal_address:String(legal.legal_address??prior.rows[0].site.legal_address??'').trim()};
+    if(!/^\d{14}$/.test(siteLegal.siret))throw new HttpError('Indiquez un SIRET de 14 chiffres avant publication.',422);
+    if(siteLegal.legal_address.length<12)throw new HttpError('Indiquez une adresse professionnelle complète avant publication.',422);
+    const r=await query("UPDATE artisan_sites SET status='published',site=$2,updated_at=now() WHERE user_id=$1 RETURNING slug,site",[a.id,JSON.stringify(siteLegal)]);
     const item=r.rows[0],website=sitePreviewUrl(config.baseUrl,item.slug);
     const site=item.site;
     await query(`INSERT INTO profiles(user_id,business_name,job,city,city_code,city_lat,city_lng,phone,website,radius_km)
