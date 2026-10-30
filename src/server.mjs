@@ -1,6 +1,7 @@
 import http from 'node:http';
 import {normalizeSiteInput,makeSlug,suggestDomains,renderLanding,renderLegalPage,sitePreviewUrl,trades} from './site-builder.mjs';
 import {generateSiteCopy} from './site-copy.mjs';
+import {lovableBuildUrl} from './lovable-bridge.mjs';
 import {readTrackedCalls, listCallActions, configureCallActions} from './google-calls.mjs';
 import {checkAvailability} from './registrar.mjs';
 import fs from 'node:fs/promises';
@@ -212,6 +213,15 @@ async function handle(req,res){
     if(!record.rows.length)throw new HttpError('Créez votre site avant de choisir un domaine.',422);
     const suggestion=suggestDomains(record.rows[0].site).map(v=>v.domain);
     return send(res,{provider:'Openprovider',result:await checkAvailability(suggestion),purchaseAvailable:false});
+  }
+  if(p==='/api/site/lovable-link'&&m==='POST'){
+    rateGuard(req,'lovable-link',10,60000);
+    const r=await query('SELECT site FROM artisan_sites WHERE user_id=$1',[a.id]);
+    if(!r.rows.length)throw new HttpError('Créez d’abord votre site pour préparer le design Lovable.',422);
+    const body=await readJson(req);
+    if(body.confirm!=='EXPORTER VERS LOVABLE')throw new HttpError('Confirmez le transfert des informations de votre entreprise vers Lovable.',422);
+    const site={...r.rows[0].site,design_style:['signature','atelier','local'].includes(body.style)?body.style:'local'};
+    return send(res,{url:lovableBuildUrl(site),note:'Lovable ouvre un prompt prérempli. La création nécessite une connexion Lovable et une validation. Le site externe et le tracking ne sont pas connectés automatiquement.'});
   }
   if(p==='/api/site/domains'&&m==='GET'){
     const r=await query('SELECT site FROM artisan_sites WHERE user_id=$1',[a.id]);
