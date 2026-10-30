@@ -37,7 +37,7 @@ export function generatePlan(profile) {
     `Intervention à ${city} et alentours. Expliquez-nous votre besoin et obtenez une réponse.`,
     `Contactez un artisan à ${city} pour vos besoins de ${data.label.toLowerCase()}.`,
   ]).filter(x=>x.length<=90);
-  // Every new Search campaign lands on the artisan's own site.
+  // Every new Search campaign lands on the artisan's own site or generated page.
   const destination='site';
   const website=clean(profile.website||'');
   let callPhone='';
