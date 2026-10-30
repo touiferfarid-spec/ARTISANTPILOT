@@ -1,5 +1,5 @@
 import http from 'node:http';
-import {normalizeSiteInput,makeSlug,suggestDomains,renderLanding,sitePreviewUrl,trades} from './site-builder.mjs';
+import {normalizeSiteInput,makeSlug,suggestDomains,renderLanding,renderLegalPage,sitePreviewUrl,trades} from './site-builder.mjs';
 import {generateSiteCopy} from './site-copy.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -69,12 +69,21 @@ async function handle(req,res){
   if(m==='GET'&&['/','/studio','/studio.js','/studio.css','/landing.css','/site-track.js','/privacy','/confidentialite','/terms','/conditions','/app.js','/coverage.js','/style.css'].includes(p))return view(req,res,p);
   if(p==='/api/health')return send(res,{status:dbReady?'ok':'degraded',database:dbReady,integrations:integrationsConfigured(),writes:{accountCreation:config.allowAccountCreation,campaignCreation:config.allowCampaignWrites,activation:config.allowActivation,locationSync:config.allowLocationSync},message:dbReady?'Base active, API externes selon configuration':'La base de données doit être initialisée'},dbReady?200:503);
   if(m==='GET' && p.startsWith('/p/')){
-    const slug=decodeURIComponent(p.slice(3));
-    if(!/^[a-z0-9-]{5,90}$/.test(slug))throw new HttpError('Page introuvable',404);
-    const data=await query("SELECT site,slug,custom_domain,domain_verified FROM artisan_sites WHERE slug=$1 AND status='published'",[slug]);
-    if(!data.rows.length)throw new HttpError('Page introuvable',404);
-    const html=renderLanding({...data.rows[0].site,slug},{baseUrl:config.baseUrl});
-    res.writeHead(200,secureHeaders({'content-type':'text/html; charset=utf-8','cache-control':'public, max-age=120'}));return res.end(html);
+    const match=p.match(/^\/p\/([a-z0-9-]{5,90})(?:\/(mentions-legales|confidentialite))?$/);
+    if(!match)throw new HttpError('Page introuvable',404);
+    if(!dbReady)throw new HttpError('Service indisponible',503);
+    const result=await query("SELECT site,slug,status FROM artisan_sites WHERE slug=$1",[match[1]]);
+    if(!result.rows.length)throw new HttpError('Page introuvable',404);
+    const record=result.rows[0];
+    if(record.status!=='published'){
+      const owner=await sessionUser(req);
+      if(!owner)throw new HttpError('Page non publiée',404);
+      const own=await query('SELECT 1 FROM artisan_sites WHERE user_id=$1 AND slug=$2',[owner.id,match[1]]);
+      if(!own.rows.length)throw new HttpError('Page non publiée',404);
+    }
+    const site={...record.site,slug:record.slug};
+    const markup=match[2]?renderLegalPage(site,match[2]==='confidentialite'?'privacy':'legal'):renderLanding(site,{baseUrl:config.baseUrl,preview:record.status!=='published'});
+    res.writeHead(200,secureHeaders({'content-type':'text/html; charset=utf-8','cache-control':'private, no-store'}));return res.end(markup);
   }
   if(!p.startsWith('/api/'))throw new HttpError('Page introuvable',404);
   if(!dbReady)throw new HttpError('Base de données indisponible',503);
@@ -138,6 +147,8 @@ async function handle(req,res){
   if(p==='/api/site/generate'&&m==='POST'){
     rateGuard(req,'site-generate',8,60000);
     const input=normalizeSiteInput(await readJson(req));
+    const city=await findCityByCode(input.city_code);
+    if(normalizeSearchText(city.name)!==normalizeSearchText(input.city))throw new HttpError('Choisissez une commune dans les suggestions.',422);
     const prior=await query('SELECT slug FROM artisan_sites WHERE user_id=$1',[a.id]);
     const slug=prior.rows[0]?.slug||makeSlug(input);
     const generated=await generateSiteCopy(input);
