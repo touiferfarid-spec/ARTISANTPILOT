@@ -19,6 +19,7 @@ export const config = {
   openaiKey: env.OPENAI_API_KEY || '',
   openaiModel: env.OPENAI_MODEL || 'gpt-4.1-mini',
   cronToken: env.CRON_TOKEN || '',
+  allowConversionWrites: env.GOOGLE_ADS_ALLOW_CONVERSION_WRITES === 'true',
   allowAccountCreation: env.GOOGLE_ADS_ALLOW_ACCOUNT_CREATION === 'true',
   allowCampaignWrites: env.GOOGLE_ADS_ALLOW_CAMPAIGN_WRITES === 'true',
   allowActivation: env.GOOGLE_ADS_ALLOW_ACTIVATION === 'true',
