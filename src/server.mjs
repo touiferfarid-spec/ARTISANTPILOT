@@ -1,6 +1,8 @@
 import http from 'node:http';
 import {normalizeSiteInput,makeSlug,suggestDomains,renderLanding,renderLegalPage,sitePreviewUrl,trades} from './site-builder.mjs';
 import {generateSiteCopy} from './site-copy.mjs';
+import {readTrackedCalls, listCallActions, configureCallActions} from './google-calls.mjs';
+import {checkAvailability} from './registrar.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -152,7 +154,7 @@ async function handle(req,res){
     const prior=await query('SELECT slug FROM artisan_sites WHERE user_id=$1',[a.id]);
     const slug=prior.rows[0]?.slug||makeSlug(input);
     const generated=await generateSiteCopy(input);
-    const site={...input,copy:generated.copy,copy_source:generated.source,slug};
+    const site={...input,city:city.name,city_lat:city.lat,city_lng:city.lng,copy:generated.copy,copy_source:generated.source,slug};
     await query(`INSERT INTO artisan_sites(user_id,slug,site,status) VALUES($1,$2,$3,'draft')
       ON CONFLICT(user_id) DO UPDATE SET site=EXCLUDED.site,status='draft',domain_verified=false,custom_domain=NULL,updated_at=now()`,[a.id,slug,JSON.stringify(site)]);
     await audit(a.id,'site.generated',{job:input.job,slug,source:generated.source});
@@ -163,14 +165,46 @@ async function handle(req,res){
     if(!r.rows.length)throw new HttpError('Générez votre site avant sa publication.',404);
     const item=r.rows[0],website=sitePreviewUrl(config.baseUrl,item.slug);
     const site=item.site;
-    await query(`INSERT INTO profiles(user_id,business_name,job,city,phone,website,radius_km)
-      VALUES($1,$2,$3,$4,$5,$6,$7)
+    await query(`INSERT INTO profiles(user_id,business_name,job,city,city_code,city_lat,city_lng,phone,website,radius_km)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
       ON CONFLICT(user_id) DO UPDATE SET
       business_name=EXCLUDED.business_name, job=EXCLUDED.job,city=EXCLUDED.city,
+      city_code=EXCLUDED.city_code,city_lat=EXCLUDED.city_lat,city_lng=EXCLUDED.city_lng,
       phone=EXCLUDED.phone,website=EXCLUDED.website,radius_km=EXCLUDED.radius_km,updated_at=now()`,
-      [a.id,site.business_name,site.job,site.city,site.phone,website,site.radius_km]);
+      [a.id,site.business_name,site.job,site.city,site.city_code,site.city_lat,site.city_lng,site.phone,website,site.radius_km]);
     await audit(a.id,'site.published',{slug:item.slug});
     return send(res,{published:true,url:website,tracking:{click_to_call:'active',answered_calls:'requires_google_ads_configuration'},notice:'Page publiée. Les clics sont mesurés, pas encore les appels réellement décrochés.'});
+  }
+  if(p==='/api/integrations/readiness'&&m==='GET'){
+    const site=await query('SELECT status FROM artisan_sites WHERE user_id=$1',[a.id]);
+    const acct=await selectedAccount(a.id);
+    const linked=await query("SELECT provider FROM integrations WHERE user_id=$1",[a.id]);
+    const sub=await query('SELECT status FROM subscriptions WHERE user_id=$1',[a.id]);
+    return send(res,{
+      hosting:dbReady,
+      generatedSitePublished:site.rows[0]?.status==='published',
+      googleOAuthReady:integrationsConfigured().google,
+      googleAccountLinked:Boolean(acct),
+      googleAccountManagerConfigured:Boolean(config.mccId),
+      googleAdsWritesEnabled:config.allowCampaignWrites,
+      conversionWritesEnabled:config.allowConversionWrites,
+      phoneClicksTracked:true,
+      answeredCallTracking:'requires_google_forwarding_number_and_real_test',
+      openaiConfigured:integrationsConfigured().ai,
+      stripeConfigured:integrationsConfigured().stripe,
+      subscriptionActive:['active','trialing'].includes(sub.rows[0]?.status),
+      registrarConfigured:integrationsConfigured().registrar,
+      domainPurchasing:'not_yet_implemented',
+      googleOAuthLinked:linked.rows.some(x=>x.provider==='ads')
+    });
+  }
+  if(p==='/api/site/domains/check'&&m==='POST'){
+    rateGuard(req,'domain-availability',6,60000);
+    if(!integrationsConfigured().registrar)throw new HttpError('Connexion au fournisseur de domaines requise avant les vérifications en direct.',503);
+    const record=await query('SELECT site FROM artisan_sites WHERE user_id=$1',[a.id]);
+    if(!record.rows.length)throw new HttpError('Créez votre site avant de choisir un domaine.',422);
+    const suggestion=suggestDomains(record.rows[0].site).map(v=>v.domain);
+    return send(res,{provider:'Openprovider',result:await checkAvailability(suggestion),purchaseAvailable:false});
   }
   if(p==='/api/site/domains'&&m==='GET'){
     const r=await query('SELECT site FROM artisan_sites WHERE user_id=$1',[a.id]);
@@ -301,6 +335,32 @@ async function handle(req,res){
     await audit(a.id,'google.business.linked',{customerId:account.customer_id,businessAccountId,assetSet:result.assetSet});
     return send(res,{linked:true,assetSet:result.assetSet,notice:result.notice});
   }
+  if(p==='/api/google/calls'&&m==='GET'){
+    const account=await selectedAccount(a.id);
+    if(!account)throw new HttpError('Sélectionnez un compte Google Ads.',422);
+    return send(res,{customerId:account.customer_id,...await readTrackedCalls(query,a.id,account.customer_id)});
+  }
+  if(p==='/api/google/call-conversions'&&m==='GET'){
+    const account=await selectedAccount(a.id);
+    if(!account)throw new HttpError('Sélectionnez un compte Google Ads.',422);
+    const actions=await listCallActions(query,a.id,account.customer_id);
+    return send(res,{customerId:account.customer_id,actions:actions.map(x=>({name:x.name,type:x.type,status:x.status,resourceName:x.resourceName,phoneCallDurationSeconds:x.phoneCallDurationSeconds})),configured:actions.some(x=>x.type==='AD_CALL')&&actions.some(x=>x.type==='WEBSITE_CALL'),note:'L’installation de numéros de transfert sur le site et le test des appels réels restent nécessaires.'});
+  }
+  if(p==='/api/google/call-conversions/validate'&&m==='POST'){
+    const account=await selectedAccount(a.id);
+    if(!account)throw new HttpError('Sélectionnez un compte Google Ads.',422);
+    return send(res,{result:await configureCallActions(query,a.id,account.customer_id,{validateOnly:true}),note:'Validation uniquement, aucune conversion créée.'});
+  }
+  if(p==='/api/google/call-conversions/create'&&m==='POST'){
+    if(!config.allowConversionWrites)throw new HttpError('Création de conversions désactivée jusqu’à validation par l’administrateur.',503);
+    const account=await selectedAccount(a.id);
+    if(!account)throw new HttpError('Sélectionnez un compte Google Ads.',422);
+    const input=await readJson(req);
+    if(input.confirm!=='CREER LES CONVERSIONS')throw new HttpError('Confirmation explicite nécessaire.',422);
+    const result=await configureCallActions(query,a.id,account.customer_id,{validateOnly:false});
+    await audit(a.id,'google.call_conversions.created',{customerId:account.customer_id});
+    return send(res,{result,note:'Conversions créées. Les appels doivent encore être vérifiés sur un véritable compte Google Ads.'});
+  }
   if(p==='/api/google/metrics'&&m==='GET'){
     const account=await selectedAccount(a.id);if(!account)throw new HttpError('Sélectionnez d’abord votre compte Google Ads.');
     const metrics=await dailyMetrics(query,a.id,account.customer_id);
@@ -333,7 +393,15 @@ async function handle(req,res){
   }
   if(p==='/api/campaigns/drafts'&&m==='POST'){
     const profile=await getProfile(a.id);if(!profile)throw new HttpError('Complétez votre activité avant de préparer la publicité.');
-    const plan=generatePlan(profile);const selected=await selectedAccount(a.id);
+    const siteRow=await query("SELECT site,slug,status FROM artisan_sites WHERE user_id=$1",[a.id]);
+    const row=siteRow.rows[0];
+    if(!row||row.status!=='published')throw new HttpError('Publiez votre landing page avant de préparer une campagne Search.',422);
+    const site=row.site;
+    const effective={...profile,job_label:site.job_label,services:site.services,
+      website:sitePreviewUrl(config.baseUrl,row.slug),phone:site.phone,
+      city:site.city,city_code:site.city_code,city_lat:site.city_lat,
+      city_lng:site.city_lng,radius_km:site.radius_km};
+    const plan=generatePlan(effective);const selected=await selectedAccount(a.id);
     const result=await query('INSERT INTO campaign_drafts(user_id,customer_id,plan) VALUES($1,$2,$3) RETURNING id,created_at',[a.id,selected?.customer_id||null,JSON.stringify(plan)]);
     await audit(a.id,'campaign.draft',{draftId:result.rows[0].id});
     return send(res,{draft:{id:result.rows[0].id,plan,status:'draft',createdAt:result.rows[0].created_at}},201);
