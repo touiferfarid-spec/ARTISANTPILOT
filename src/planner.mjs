@@ -17,7 +17,12 @@ const clean=x=>String(x||'').trim().replace(/\s+/g,' ');
 const unique=arr=>[...new Set(arr.map(clean).filter(Boolean))];
 export function generatePlan(profile) {
   const job = String(profile.job||'plombier').toLowerCase();
-  const data=JOBS[job]||JOBS.plombier;
+  const data=JOBS[job]||{
+    label:profile.job_label||job,
+    variants:[profile.job_label||job,...(Array.isArray(profile.services)?profile.services.slice(0,4):[])],
+    services:Array.isArray(profile.services)?profile.services:['Demandez un devis'],
+    negatives:['emploi','formation','stage','salaire','cours','gratuit','tutoriel']
+  };
   const city=clean(profile.city||'');
   const businessName=clean(profile.business_name||'Votre artisan');
   const budget=Number(profile.budget_eur||30);
@@ -37,7 +42,7 @@ export function generatePlan(profile) {
     `Intervention à ${city} et alentours. Expliquez-nous votre besoin et obtenez une réponse.`,
     `Contactez un artisan à ${city} pour vos besoins de ${data.label.toLowerCase()}.`,
   ]).filter(x=>x.length<=90);
-  // Every new Search campaign lands on the artisan's own site.
+  // Every new Search campaign lands on the artisan's own site or generated page.
   const destination='site';
   const website=clean(profile.website||'');
   let callPhone='';

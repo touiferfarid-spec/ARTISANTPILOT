@@ -117,6 +117,21 @@ export const migrations = [
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`,
   `CREATE INDEX IF NOT EXISTS idx_audit_user_date ON audit_log(user_id,created_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS artisan_sites (
+    user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    slug TEXT NOT NULL UNIQUE,
+    site JSONB NOT NULL,
+    status TEXT NOT NULL DEFAULT 'draft',
+    custom_domain TEXT UNIQUE,
+    domain_verified BOOLEAN NOT NULL DEFAULT false,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
+  `CREATE TABLE IF NOT EXISTS site_call_clicks (
+    id BIGSERIAL PRIMARY KEY, site_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    occurred_at TIMESTAMPTZ NOT NULL DEFAULT now(), source TEXT NOT NULL DEFAULT 'website',
+    visitor_hash TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS site_call_clicks_lookup ON site_call_clicks(site_user_id, occurred_at DESC)`,
 ];
 export async function applyMigrations(pool) {
   const client = await pool.connect();
