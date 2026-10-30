@@ -154,7 +154,7 @@ async function handle(req,res){
     const prior=await query('SELECT slug FROM artisan_sites WHERE user_id=$1',[a.id]);
     const slug=prior.rows[0]?.slug||makeSlug(input);
     const generated=await generateSiteCopy(input);
-    const site={...input,copy:generated.copy,copy_source:generated.source,slug};
+    const site={...input,city:city.name,city_lat:city.lat,city_lng:city.lng,copy:generated.copy,copy_source:generated.source,slug};
     await query(`INSERT INTO artisan_sites(user_id,slug,site,status) VALUES($1,$2,$3,'draft')
       ON CONFLICT(user_id) DO UPDATE SET site=EXCLUDED.site,status='draft',domain_verified=false,custom_domain=NULL,updated_at=now()`,[a.id,slug,JSON.stringify(site)]);
     await audit(a.id,'site.generated',{job:input.job,slug,source:generated.source});
@@ -165,12 +165,13 @@ async function handle(req,res){
     if(!r.rows.length)throw new HttpError('Générez votre site avant sa publication.',404);
     const item=r.rows[0],website=sitePreviewUrl(config.baseUrl,item.slug);
     const site=item.site;
-    await query(`INSERT INTO profiles(user_id,business_name,job,city,phone,website,radius_km)
-      VALUES($1,$2,$3,$4,$5,$6,$7)
+    await query(`INSERT INTO profiles(user_id,business_name,job,city,city_code,city_lat,city_lng,phone,website,radius_km)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
       ON CONFLICT(user_id) DO UPDATE SET
       business_name=EXCLUDED.business_name, job=EXCLUDED.job,city=EXCLUDED.city,
+      city_code=EXCLUDED.city_code,city_lat=EXCLUDED.city_lat,city_lng=EXCLUDED.city_lng,
       phone=EXCLUDED.phone,website=EXCLUDED.website,radius_km=EXCLUDED.radius_km,updated_at=now()`,
-      [a.id,site.business_name,site.job,site.city,site.phone,website,site.radius_km]);
+      [a.id,site.business_name,site.job,site.city,site.city_code,site.city_lat,site.city_lng,site.phone,website,site.radius_km]);
     await audit(a.id,'site.published',{slug:item.slug});
     return send(res,{published:true,url:website,tracking:{click_to_call:'active',answered_calls:'requires_google_ads_configuration'},notice:'Page publiée. Les clics sont mesurés, pas encore les appels réellement décrochés.'});
   }
@@ -392,7 +393,15 @@ async function handle(req,res){
   }
   if(p==='/api/campaigns/drafts'&&m==='POST'){
     const profile=await getProfile(a.id);if(!profile)throw new HttpError('Complétez votre activité avant de préparer la publicité.');
-    const plan=generatePlan(profile);const selected=await selectedAccount(a.id);
+    const siteRow=await query("SELECT site,slug,status FROM artisan_sites WHERE user_id=$1",[a.id]);
+    const row=siteRow.rows[0];
+    if(!row||row.status!=='published')throw new HttpError('Publiez votre landing page avant de préparer une campagne Search.',422);
+    const site=row.site;
+    const effective={...profile,job_label:site.job_label,services:site.services,
+      website:sitePreviewUrl(config.baseUrl,row.slug),phone:site.phone,
+      city:site.city,city_code:site.city_code,city_lat:site.city_lat,
+      city_lng:site.city_lng,radius_km:site.radius_km};
+    const plan=generatePlan(effective);const selected=await selectedAccount(a.id);
     const result=await query('INSERT INTO campaign_drafts(user_id,customer_id,plan) VALUES($1,$2,$3) RETURNING id,created_at',[a.id,selected?.customer_id||null,JSON.stringify(plan)]);
     await audit(a.id,'campaign.draft',{draftId:result.rows[0].id});
     return send(res,{draft:{id:result.rows[0].id,plan,status:'draft',createdAt:result.rows[0].created_at}},201);
