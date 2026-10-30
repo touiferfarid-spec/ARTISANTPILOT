@@ -2,6 +2,7 @@ import http from 'node:http';
 import {normalizeSiteInput,makeSlug,suggestDomains,renderLanding,renderLegalPage,sitePreviewUrl,trades} from './site-builder.mjs';
 import {generateSiteCopy} from './site-copy.mjs';
 import {readTrackedCalls, listCallActions, configureCallActions} from './google-calls.mjs';
+import {checkAvailability} from './registrar.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -195,6 +196,14 @@ async function handle(req,res){
       domainPurchasing:'not_yet_implemented',
       googleOAuthLinked:linked.rows.some(x=>x.provider==='ads')
     });
+  }
+  if(p==='/api/site/domains/check'&&m==='POST'){
+    rateGuard(req,'domain-availability',6,60000);
+    if(!integrationsConfigured().registrar)throw new HttpError('Connexion au fournisseur de domaines requise avant les vérifications en direct.',503);
+    const record=await query('SELECT site FROM artisan_sites WHERE user_id=$1',[a.id]);
+    if(!record.rows.length)throw new HttpError('Créez votre site avant de choisir un domaine.',422);
+    const suggestion=suggestDomains(record.rows[0].site).map(v=>v.domain);
+    return send(res,{provider:'Openprovider',result:await checkAvailability(suggestion),purchaseAvailable:false});
   }
   if(p==='/api/site/domains'&&m==='GET'){
     const r=await query('SELECT site FROM artisan_sites WHERE user_id=$1',[a.id]);
