@@ -152,10 +152,12 @@ async function handle(req,res){
     if(!r.rows.length)throw new HttpError('Générez votre site avant sa publication.',404);
     const item=r.rows[0],website=sitePreviewUrl(config.baseUrl,item.slug);
     const site=item.site;
-    const prior=await getProfile(a.id);
-    if(prior){
-      await query("UPDATE profiles SET website=$1,phone=$2,business_name=$3,job=$4,updated_at=now() WHERE user_id=$5",[website,site.phone,site.business_name,site.job,a.id]);
-    }
+    await query(`INSERT INTO profiles(user_id,business_name,job,city,phone,website,radius_km)
+      VALUES($1,$2,$3,$4,$5,$6,$7)
+      ON CONFLICT(user_id) DO UPDATE SET
+      business_name=EXCLUDED.business_name, job=EXCLUDED.job,city=EXCLUDED.city,
+      phone=EXCLUDED.phone,website=EXCLUDED.website,radius_km=EXCLUDED.radius_km,updated_at=now()`,
+      [a.id,site.business_name,site.job,site.city,site.phone,website,site.radius_km]);
     await audit(a.id,'site.published',{slug:item.slug});
     return send(res,{published:true,url:website,tracking:{click_to_call:'active',answered_calls:'requires_google_ads_configuration'},notice:'Page publiée. Les clics sont mesurés, pas encore les appels réellement décrochés.'});
   }
