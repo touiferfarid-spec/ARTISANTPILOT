@@ -31,7 +31,8 @@ export function summarizeCalls(rows=[]){
 }
 export async function readTrackedCalls(query,userId,customerId){
   const id=safeCustomerId(customerId);if(!id)throw Error('Compte Google Ads invalide');
-  const q='SELECT call_view.resource_name,call_view.call_duration_seconds,call_view.call_status,call_view.call_tracking_display_location,call_view.start_call_date_time,campaign.name FROM call_view WHERE call_view.start_call_date_time DURING LAST_30_DAYS ORDER BY call_view.start_call_date_time DESC LIMIT 500';
+  const start=new Date(Date.now()-30*86400000).toISOString().slice(0,19).replace('T',' ');
+  const q="SELECT call_view.resource_name,call_view.call_duration_seconds,call_view.call_status,call_view.call_tracking_display_location,call_view.start_call_date_time,campaign.name FROM call_view WHERE call_view.start_call_date_time >= '"+start+"' ORDER BY call_view.start_call_date_time DESC LIMIT 500";
   return summarizeCalls(await searchAds(query,userId,id,q));
 }
 export const VALID_TYPES=['AD_CALL','WEBSITE_CALL'];
