@@ -1,5 +1,7 @@
 const env = process.env;
 export const config = {
+  version: '0.4.0',
+  pilotMaxAccounts: Math.max(1, Math.min(1000, Number.parseInt(env.PILOT_MAX_ACCOUNTS,10)||5)),
   port: Number(env.PORT || 3000),
   baseUrl: (env.APP_BASE_URL || 'http://localhost:3000').replace(/\/$/, ''),
   dbUrl: env.DATABASE_URL || '',
@@ -15,10 +17,14 @@ export const config = {
   stripeKey: env.STRIPE_SECRET_KEY || '',
   stripePrice: env.STRIPE_PRICE_ID || '',
   stripeWebhook: env.STRIPE_WEBHOOK_SECRET || '',
+  stripeAllowLive: env.STRIPE_ALLOW_LIVE_PAYMENTS === 'true',
   mapsBrowserKey: env.GOOGLE_MAPS_BROWSER_KEY || '',
   openaiKey: env.OPENAI_API_KEY || '',
   openaiModel: env.OPENAI_MODEL || 'gpt-4.1-mini',
   cronToken: env.CRON_TOKEN || '',
+  mailKey: env.RESEND_API_KEY || '',
+  mailFrom: env.MAIL_FROM || '',
+  lovableTemplateUrl: env.LOVABLE_TEMPLATE_URL || '',
   allowConversionWrites: env.GOOGLE_ADS_ALLOW_CONVERSION_WRITES === 'true',
   allowAccountCreation: env.GOOGLE_ADS_ALLOW_ACCOUNT_CREATION === 'true',
   allowCampaignWrites: env.GOOGLE_ADS_ALLOW_CAMPAIGN_WRITES === 'true',
@@ -32,6 +38,7 @@ export const integrationsConfigured = () => ({
   business: Boolean(config.businessEnabled && config.googleId && config.googleSecret && /^[a-f0-9]{64}$/i.test(config.encryptionKey)),
   stripe: Boolean(config.stripeKey && config.stripePrice && config.stripeWebhook),
   registrar: Boolean(config.registrarUser && config.registrarPassword),
-  callMeasurement: Boolean(config.googleId && config.googleSecret && config.mccId),
+  callMeasurement: Boolean(config.googleId && config.googleSecret),
+  email: Boolean(config.mailKey && config.mailFrom),
   ai: Boolean(config.openaiKey),
 });

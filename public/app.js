@@ -11,6 +11,7 @@ const fullApi=async(route,options={})=>{
 };
 function toast(message,type='success'){$('toast').textContent=message;$('toast').className='toast '+(type==='error'?'error':type==='warning'?'warning':'');setTimeout(()=>$('toast').classList.add('hidden'),5200)}
 function showAuth(mode='register'){
+  location.assign('/account?mode='+mode);return;
   state.authMode=mode;$('authOverlay').classList.remove('hidden');$('authTitle').textContent=mode==='register'?'Créer mon compte artisan':'Me connecter';$('authSubmit').textContent=mode==='register'?'Créer mon compte →':'Se connecter →';$('authSwitch').textContent=mode==='register'?"J'ai déjà un compte · Se connecter":'Créer un compte';$('authPassword').setAttribute('autocomplete',mode==='register'?'new-password':'current-password');$('authFeedback').textContent='';$('authEmail').focus();
 }
 function hideAuth(){$('authOverlay').classList.add('hidden');$('authPassword').value=''}
@@ -26,7 +27,7 @@ function setTab(tab,changeHash=true){
   if(tab==='setup')window.ArtisanCoverage?.activate();
   if(tab==='connections')loadConnections();if(tab==='billing')loadBilling();if(tab==='campaigns')loadDrafts();if(tab==='dashboard')loadMetrics();
 }
-async function boot(){try{const d=await fullApi('/api/me');state.user=d.user;}catch{state.user=null}loginUi();if(state.user)await loadProfile();}
+async function boot(){try{const d=await fullApi('/api/me');state.user=d.user;}catch{state.user=null}if(state.user&&!new URLSearchParams(location.search).has('advanced')){location.replace('/studio');return;}loginUi();if(state.user)await loadProfile();}
 for(const id of ['openAuth','heroStart','offerStart'])$(id).addEventListener('click',()=>showAuth());
 $('closeAuth').addEventListener('click',hideAuth);
 $('authOverlay').addEventListener('click',e=>{if(e.target===$('authOverlay'))hideAuth()});

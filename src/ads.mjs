@@ -6,15 +6,15 @@ const GOOGLE_ROOT='https://googleads.googleapis.com';
 export class ProviderError extends Error {
   constructor(message,status=502,detail=''){super(message);this.status=status;this.detail=detail;}
 }
-export function oauthUrl({state,provider='ads'}) {
+export function oauthUrl({state,provider='ads',challenge}) {
   const scope=provider==='business'?'openid email https://www.googleapis.com/auth/business.manage':'openid email https://www.googleapis.com/auth/adwords';
-  return 'https://accounts.google.com/o/oauth2/v2/auth?'+new URLSearchParams({client_id:config.googleId,redirect_uri:config.baseUrl+'/api/google/callback',response_type:'code',scope,access_type:'offline',prompt:'consent',state}).toString();
+  return 'https://accounts.google.com/o/oauth2/v2/auth?'+new URLSearchParams({client_id:config.googleId,redirect_uri:config.baseUrl+'/api/google/callback',response_type:'code',scope,access_type:'offline',prompt:'consent',state,...(challenge?{code_challenge:challenge,code_challenge_method:'S256'}:{})}).toString();
 }
-export async function exchangeCode(code) {
-  const params=new URLSearchParams({client_id:config.googleId,client_secret:config.googleSecret,redirect_uri:config.baseUrl+'/api/google/callback',code,grant_type:'authorization_code'});
+export async function exchangeCode(code,verifier) {
+  const params=new URLSearchParams({client_id:config.googleId,client_secret:config.googleSecret,redirect_uri:config.baseUrl+'/api/google/callback',code,grant_type:'authorization_code',...(verifier?{code_verifier:verifier}:{})});
   const r=await fetch('https://oauth2.googleapis.com/token',{method:'POST',body:params,signal:AbortSignal.timeout(15000)});
   const body=await r.json().catch(()=>({}));
-  if(!r.ok)throw new ProviderError('Google a refusé la connexion OAuth.',400);
+  if(!r.ok||!body.access_token||!(Number(body.expires_in)>0))throw new ProviderError('Google a refusé la connexion OAuth.',400);
   let accountEmail='';
   if(body.access_token){
     try{const user=await fetch('https://openidconnect.googleapis.com/v1/userinfo',{headers:{authorization:'Bearer '+body.access_token},signal:AbortSignal.timeout(10000)});if(user.ok)accountEmail=String((await user.json()).email||'')}catch{}
@@ -44,13 +44,19 @@ export async function accessToken(query,userId,provider='ads') {
   return next.access_token;
 }
 export async function requestAds(query,userId,path,{body,loginCustomerId,method}={}) {
+  assertAdsRequestAllowed(path,body,method);
   const token=await accessToken(query,userId,'ads');
   const headers={authorization:'Bearer '+token};
   // Since September 2026 Google Ads API access is bound to the OAuth Cloud project.
   // Legacy developer tokens are optional and ignored; omit the header when unset.
   if(config.developerToken)headers['developer-token']=config.developerToken;
   // listAccessibleCustomers explicitly has no login customer ID.
-  const login=loginCustomerId===undefined ? config.mccId:loginCustomerId;
+  let login=loginCustomerId===undefined ? config.mccId:loginCustomerId;
+  const target=path.match(/^customers\/(\d{10})\//)?.[1];
+  if(target&&loginCustomerId===undefined){
+    const selected=await query('SELECT login_customer_id FROM google_accounts WHERE user_id=$1 AND customer_id=$2',[userId,target]);
+    if(selected.rows[0])login=selected.rows[0].login_customer_id||'';
+  }
   if(login)headers['login-customer-id']=login;
   if(body)headers['content-type']='application/json';
   const url=`${GOOGLE_ROOT}/${config.adsVersion}/${path}`;
@@ -58,6 +64,18 @@ export async function requestAds(query,userId,path,{body,loginCustomerId,method}
   const content=await response.json().catch(()=>({}));
   if(!response.ok)throw new ProviderError('Google Ads a refusé la requête ('+response.status+').',response.status<500?422:503,String(content.error?.message||'').slice(0,240));
   return content;
+}
+// Enforce write switches at the provider boundary, including future callers.
+export function assertAdsRequestAllowed(path,body,method) {
+  const read=/^(customers:listAccessibleCustomers|geoTargetConstants:suggest|customers\/\d{10}\/googleAds:(search|searchStream))$/.test(path);
+  if(read && (!method || ['GET','POST'].includes(method)))return;
+  if(body?.validateOnly===true && (/^customers\/\d{10}\/(googleAds|conversionActions):mutate$/.test(path)||/^customers\/\d{10}:createCustomerClient$/.test(path)))return;
+  const allowed=path.endsWith('/googleAds:mutate')?config.allowCampaignWrites:
+    path.endsWith('/campaigns:mutate')?config.allowCampaignWrites&&config.allowActivation:
+    path.endsWith('/conversionActions:mutate')?config.allowConversionWrites:
+    /\/(assetSets|customerAssetSets):mutate$/.test(path)?config.allowLocationSync:
+    /:(createCustomerClient)$|\/customerUserAccessInvitations:mutate$/.test(path)?config.allowAccountCreation:false;
+  if(!allowed)throw new ProviderError('Écriture Google Ads désactivée par sécurité.',503);
 }
 export async function listAccounts(query,userId) {
   const roots=await requestAds(query,userId,'customers:listAccessibleCustomers',{loginCustomerId:''});
@@ -67,11 +85,11 @@ export async function listAccounts(query,userId) {
     const id=name.split('/')[1];
     try{
       // The root may be a manager: include direct client accounts. Never assume its billing currency.
-      const entries=await searchAds(query,userId,id,`SELECT customer_client.id,customer_client.descriptive_name,customer_client.currency_code,customer_client.time_zone,customer_client.manager,customer_client.level FROM customer_client WHERE customer_client.level <= 1 LIMIT 100`);
+      const entries=await searchAds(query,userId,id,`SELECT customer_client.id,customer_client.descriptive_name,customer_client.currency_code,customer_client.time_zone,customer_client.manager,customer_client.level FROM customer_client WHERE customer_client.manager = false LIMIT 200`,{loginCustomerId:id});
       for(const result of entries){
         const x=result.customerClient||{};
         if(x.manager===true)continue;
-        if(x.id)add({id:String(x.id),name:x.descriptiveName||'Compte '+x.id,currency:x.currencyCode||null,timezone:x.timeZone||null});
+        if(x.id)add({id:String(x.id),name:x.descriptiveName||'Compte '+x.id,currency:x.currencyCode||null,timezone:x.timeZone||null,loginCustomerId:String(x.id)===id?'':id});
       }
       if(!entries.length){
         const one=await searchAds(query,userId,id,'SELECT customer.id,customer.descriptive_name,customer.currency_code,customer.time_zone FROM customer LIMIT 1');
@@ -81,12 +99,12 @@ export async function listAccounts(query,userId) {
   }
   return accounts;
 }
-export async function searchAds(query,userId,customerId,gaql) {
+export async function searchAds(query,userId,customerId,gaql,options={}) {
   const id=safeCustomerId(customerId);
   if(!id)throw new ProviderError('Identifiant Google Ads invalide',400);
   const rows=[];let pageToken;
   for(let i=0;i<3;i++){
-    const r=await requestAds(query,userId,`customers/${id}/googleAds:search`,{body:{query:gaql,pageSize:1000,...(pageToken?{pageToken}:{})}});
+    const r=await requestAds(query,userId,`customers/${id}/googleAds:search`,{...options,body:{query:gaql,...(pageToken?{pageToken}:{})}});
     rows.push(...(r.results||[]));pageToken=r.nextPageToken;
     if(!pageToken)break;
   }
@@ -137,7 +155,7 @@ export function buildSearchCampaignOperations(plan,customerId) {
   const budget=`customers/${customer}/campaignBudgets/-1`,campaign=`customers/${customer}/campaigns/-2`,group=`customers/${customer}/adGroups/-3`;
   const operations=[
     {campaignBudgetOperation:{create:{resourceName:budget,name:name+' | Budget',amountMicros:String(Math.round(daily*1e6)),deliveryMethod:'STANDARD',explicitlyShared:false}}},
-    {campaignOperation:{create:{resourceName:campaign,name,campaignBudget:budget,advertisingChannelType:'SEARCH',status:'PAUSED',manualCpc:{},networkSettings:{targetGoogleSearch:true,targetSearchNetwork:false,targetContentNetwork:false, targetPartnerSearchNetwork:false}}}},
+    {campaignOperation:{create:{resourceName:campaign,name,campaignBudget:budget,advertisingChannelType:'SEARCH',status:'PAUSED',containsEuPoliticalAdvertising:'DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING',manualCpc:{},geoTargetTypeSetting:{positiveGeoTargetType:'PRESENCE'},networkSettings:{targetGoogleSearch:true,targetSearchNetwork:false,targetContentNetwork:false, targetPartnerSearchNetwork:false}}}},
     {campaignCriterionOperation:{create:{campaign,...geoCriterion}}},
     {adGroupOperation:{create:{resourceName:group,campaign,name:'Services locaux',status:'ENABLED',type:'SEARCH_STANDARD',cpcBidMicros:'2000000'}}},
     // A separate call asset for this specific artisan, never shared across clients.

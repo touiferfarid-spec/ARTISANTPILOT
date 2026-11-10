@@ -12,6 +12,7 @@ export const migrations = [
     expires_at TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT false`,
   `CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at)`,
   `CREATE TABLE IF NOT EXISTS profiles (
     user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
@@ -42,6 +43,7 @@ export const migrations = [
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY(user_id, provider)
   )`,
+  `ALTER TABLE oauth_states ADD COLUMN IF NOT EXISTS verifier TEXT`,
   `CREATE TABLE IF NOT EXISTS google_accounts (
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     customer_id TEXT NOT NULL,
@@ -111,6 +113,10 @@ export const migrations = [
     id TEXT PRIMARY KEY,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`,
+  `ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS checkout_id TEXT`,
+  `ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS checkout_url TEXT`,
+  `ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS checkout_expires_at TIMESTAMPTZ`,
+  `ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS livemode BOOLEAN NOT NULL DEFAULT false`,
   `CREATE TABLE IF NOT EXISTS audit_log (
     id BIGSERIAL PRIMARY KEY, user_id UUID REFERENCES users(id) ON DELETE SET NULL,
     action TEXT NOT NULL, details JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -132,6 +138,50 @@ export const migrations = [
     visitor_hash TEXT
   )`,
   `CREATE INDEX IF NOT EXISTS site_call_clicks_lookup ON site_call_clicks(site_user_id, occurred_at DESC)`,
+  `ALTER TABLE artisan_sites ADD COLUMN IF NOT EXISTS draft JSONB`,
+  `ALTER TABLE google_accounts ADD COLUMN IF NOT EXISTS login_customer_id TEXT`,
+  `CREATE TABLE IF NOT EXISTS auth_tokens (
+    token_hash TEXT PRIMARY KEY, user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK(kind IN ('verify','reset')), expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
+  `ALTER TABLE site_call_clicks ADD COLUMN IF NOT EXISTS event_key TEXT`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS site_call_event_unique ON site_call_clicks(site_user_id,event_key)`,
+  `CREATE TABLE IF NOT EXISTS login_states (
+    state_hash TEXT PRIMARY KEY, verifier TEXT NOT NULL, expires_at TIMESTAMPTZ NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS identities (
+    provider TEXT NOT NULL, subject TEXT NOT NULL, user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY(provider,subject), UNIQUE(provider,user_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS request_limits (
+    key TEXT PRIMARY KEY, count INTEGER NOT NULL, reset_at TIMESTAMPTZ NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS site_leads (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(), site_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL, phone TEXT NOT NULL, message TEXT NOT NULL DEFAULT '',
+    source TEXT NOT NULL DEFAULT 'website', status TEXT NOT NULL DEFAULT 'new',
+    request_key TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(site_user_id,request_key)
+  )`,
+  `CREATE INDEX IF NOT EXISTS site_leads_owner_date ON site_leads(site_user_id,created_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS external_sites (
+    user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    url TEXT NOT NULL, origin TEXT NOT NULL, challenge TEXT NOT NULL,
+    verified_at TIMESTAMPTZ, last_checked_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
+  `CREATE TABLE IF NOT EXISTS call_reviews (
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    customer_id TEXT NOT NULL, call_id TEXT NOT NULL,
+    outcome TEXT NOT NULL CHECK(outcome IN ('new','callback','qualified','won','irrelevant')),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), PRIMARY KEY(user_id,customer_id,call_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS tracking_checks (
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    customer_id TEXT NOT NULL, website TEXT NOT NULL, status TEXT NOT NULL,
+    checked_at TIMESTAMPTZ NOT NULL DEFAULT now(), PRIMARY KEY(user_id,customer_id)
+  )`,
 ];
 export async function applyMigrations(pool) {
   const client = await pool.connect();
