@@ -36,6 +36,11 @@ export async function readTrackedCalls(query,userId,customerId){
   return summarizeCalls(await searchAds(query,userId,id,q));
 }
 export const VALID_TYPES=['AD_CALL','WEBSITE_CALL'];
+export async function readCallReporting(query,userId,customerId){
+  const rows=await searchAds(query,userId,customerId,'SELECT customer.call_reporting_setting.call_reporting_enabled,customer.call_reporting_setting.call_conversion_reporting_enabled FROM customer LIMIT 1');
+  const settings=rows[0]?.customer?.callReportingSetting||{};
+  return {enabled:settings.callReportingEnabled===true,conversionsEnabled:settings.callConversionReportingEnabled===true};
+}
 export function createCallActionRequest(type,name){
   if(!VALID_TYPES.includes(type))throw Error('Type de conversion inconnu');
   return {

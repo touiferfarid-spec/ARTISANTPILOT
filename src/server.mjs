@@ -68,14 +68,14 @@ async function selectedAccount(userId){
 async function requireAccount(userId,customerId){const account=await selectedAccount(userId);if(!account||account.customer_id!==customerId)throw new HttpError('Sélectionnez un compte Google Ads autorisé dans votre espace.',403);return account;}
 async function getProfile(userId){const x=await query('SELECT * FROM profiles WHERE user_id=$1',[userId]);return x.rows[0]||null;}
 async function view(req,res,p){
-  const file=p==='/account'?'account.html':p==='/account.js'?'account.js':p==='/workspace.css'?'workspace.css':p==='/workspace.js'?'workspace.js':p==='/studio'?'studio.html':p==='/studio.js'?'studio.js':p==='/studio.css'?'studio.css':p==='/landing.css'?'landing.css':p==='/site-track.js'?'site-track.js':p==='/'?'index.html':p==='/privacy'||p==='/confidentialite'?'privacy.html':p==='/terms'||p==='/conditions'?'terms.html':p==='/app.js'?'app.js':p==='/coverage.js'?'coverage.js':p==='/style.css'?'style.css':null;
+  const file=p==='/account'?'account.html':p==='/account.js'?'account.js':p==='/workspace.css'?'workspace.css':p==='/workspace.js'?'workspace.js':p==='/workspace-map.js'?'workspace-map.js':p==='/studio'?'studio.html':p==='/studio.js'?'studio.js':p==='/studio.css'?'studio.css':p==='/landing.css'?'landing.css':p==='/site-track.js'?'site-track.js':p==='/'?'index.html':p==='/privacy'||p==='/confidentialite'?'privacy.html':p==='/terms'||p==='/conditions'?'terms.html':p==='/app.js'?'app.js':p==='/coverage.js'?'coverage.js':p==='/style.css'?'style.css':null;
   if(!file)throw new HttpError('Page introuvable',404);
   const data=await fs.readFile(path.join(ROOT,'../public',file));
   res.writeHead(200,secureHeaders({'content-type':file.endsWith('.html')?'text/html; charset=utf-8':file.endsWith('.js')?'application/javascript; charset=utf-8':'text/css; charset=utf-8','cache-control':file.endsWith('.html')?'no-store':'public, max-age=300',...(file==='site-track.js'?{'Cross-Origin-Resource-Policy':'cross-origin','access-control-allow-origin':'*'}:{})}));res.end(data);
 }
 async function handle(req,res){
   const url=new URL(req.url,config.baseUrl),p=url.pathname,m=req.method;
-  if(m==='GET'&&['/account','/account.js','/workspace.css','/workspace.js','/','/studio','/studio.js','/studio.css','/landing.css','/site-track.js','/privacy','/confidentialite','/terms','/conditions','/app.js','/coverage.js','/style.css'].includes(p))return view(req,res,p);
+  if(m==='GET'&&['/account','/account.js','/workspace.css','/workspace.js','/workspace-map.js','/','/studio','/studio.js','/studio.css','/landing.css','/site-track.js','/privacy','/confidentialite','/terms','/conditions','/app.js','/coverage.js','/style.css'].includes(p))return view(req,res,p);
   if(p==='/api/health')return send(res,{version:config.version,commit:process.env.RAILWAY_GIT_COMMIT_SHA?.slice(0,12)||null,status:dbReady?'ok':'degraded',database:dbReady,integrations:integrationsConfigured(),writes:{accountCreation:config.allowAccountCreation,campaignCreation:config.allowCampaignWrites,activation:config.allowActivation,locationSync:config.allowLocationSync},message:dbReady?'Base active, API externes selon configuration':'La base de données doit être initialisée'},dbReady?200:503);
   if(m==='GET' && p.startsWith('/p/')){
     const match=p.match(/^\/p\/([a-z0-9-]{5,90})(?:\/(mentions-legales|confidentialite))?$/);
@@ -460,7 +460,15 @@ async function handle(req,res){
       await query("UPDATE campaign_drafts SET status='draft',plan=$1,updated_at=now() WHERE id=$2 AND user_id=$3",[JSON.stringify(next),id,a.id]);
       return send(res,{copy,notice:'Relisez chaque annonce : aucune garantie publicitaire n’est déduite automatiquement.'});
     }
-    const account=await selectedAccount(a.id);if(!account||account.customer_id!==draft.customer_id)throw new HttpError('Le compte publicitaire sélectionné ne correspond plus à ce brouillon.',409);
+    const account=await selectedAccount(a.id);
+    if(!account)throw new HttpError('Sélectionnez votre compte Google Ads avant de vérifier ce brouillon.',422);
+    // A local draft may precede OAuth. Bind it only when its owner requests validation.
+    if(action==='validate'&&!draft.customer_id&&draft.status==='draft'){
+      const bound=await query("UPDATE campaign_drafts SET customer_id=$1,updated_at=now() WHERE id=$2 AND user_id=$3 AND customer_id IS NULL AND status='draft' RETURNING customer_id",[account.customer_id,id,a.id]);
+      if(!bound.rows.length)throw new HttpError('Ce brouillon a changé. Actualisez votre espace.',409);
+      draft.customer_id=bound.rows[0].customer_id;
+    }
+    if(account.customer_id!==draft.customer_id)throw new HttpError('Le compte publicitaire sélectionné ne correspond plus à ce brouillon.',409);
     if(!integrationsConfigured().google)throw new HttpError('Google Ads non configuré.',503);
     if(action==='validate'){
       if(!['draft','validated'].includes(draft.status))throw new HttpError('Ce brouillon a déjà été traité.',409);
@@ -489,7 +497,7 @@ async function handle(req,res){
       const profile=await getProfile(a.id);
       if(!profile?.conversion_verified)throw new HttpError('Le suivi des conversions doit être vérifié par le support avant activation.',403);
       const payment=await query('SELECT status,livemode FROM subscriptions WHERE user_id=$1',[a.id]);
-      if(!['active','trialing'].includes(payment.rows[0]?.status)||!payment.rows[0]?.livemode||!config.stripeAllowLive)throw new HttpError('Un abonnement réel validé est nécessaire avant activation. Un paiement de test ne permet pas de diffuser.',402);
+      if(config.billingRequired&&(!['active','trialing'].includes(payment.rows[0]?.status)||!payment.rows[0]?.livemode||!config.stripeAllowLive))throw new HttpError('Un abonnement réel validé est nécessaire avant activation. Un paiement de test ne permet pas de diffuser.',402);
       const input=await readJson(req);if(input.confirm!=='JE VALIDE LE BUDGET ET LA DIFFUSION')throw new HttpError('Confirmez explicitement le budget et la mise en diffusion.');
       const next=await enableCampaign(query,a.id,account.customer_id,draft.google_campaign_resource);
       await query("UPDATE campaign_drafts SET status='active',updated_at=now() WHERE id=$1",[id]);
@@ -508,7 +516,7 @@ async function handle(req,res){
     const session=await createPortal(subscription.rows[0].stripe_customer_id);return send(res,{url:session.url});
   }
   if(p==='/api/subscription'&&m==='GET'){
-    const r=await query('SELECT status,updated_at,stripe_customer_id IS NOT NULL AS has_customer,livemode FROM subscriptions WHERE user_id=$1',[a.id]);return send(res,{subscription:r.rows[0]||{status:'inactive',has_customer:false},offer:{amount:99,currency:'EUR',interval:'month',adsBudgetIncluded:false},livePaymentsEnabled:config.stripeAllowLive});
+    const r=await query('SELECT status,updated_at,stripe_customer_id IS NOT NULL AS has_customer,livemode FROM subscriptions WHERE user_id=$1',[a.id]);return send(res,{subscription:r.rows[0]||{status:'inactive',has_customer:false},pilotAccess:!config.billingRequired,offer:{amount:99,currency:'EUR',interval:'month',adsBudgetIncluded:false},livePaymentsEnabled:config.stripeAllowLive});
   }
   throw new HttpError('Fonction introuvable',404);
 }

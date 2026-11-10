@@ -1,6 +1,7 @@
 const env = process.env;
 export const config = {
-  version: '0.4.0',
+  version: '0.4.1',
+  billingRequired: env.BILLING_REQUIRED === 'true',
   pilotMaxAccounts: Math.max(1, Math.min(1000, Number.parseInt(env.PILOT_MAX_ACCOUNTS,10)||5)),
   port: Number(env.PORT || 3000),
   baseUrl: (env.APP_BASE_URL || 'http://localhost:3000').replace(/\/$/, ''),

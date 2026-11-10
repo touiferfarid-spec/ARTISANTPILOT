@@ -1,6 +1,6 @@
 # ArtisanPilot — pilote à 99 €/mois
 
-Version 0.4.0. Reprise du SaaS existant ; lancement payant soumis aux validations externes décrites dans [le guide pilote](docs/PILOT_LAUNCH.md).
+Version 0.4.1. Reprise du SaaS existant ; lancement payant soumis aux validations externes décrites dans [le guide pilote](docs/PILOT_LAUNCH.md).
 
 ## Parcours livré
 
@@ -11,7 +11,7 @@ Version 0.4.0. Reprise du SaaS existant ; lancement payant soumis aux validation
 - Stripe Checkout à 99 €/mois en EUR, portail client et webhooks signés. Réutilisation des sessions, contrôle du prix, traitement transactionnel, dédoublonnage et relecture de l’état Stripe.
 - Export vers Lovable et connexion d’un site publié par preuve de possession. Aucun achat de domaine ni génération Lovable autonome.
 
-Cinq comptes maximum par défaut (`PILOT_MAX_ACCOUNTS`), sans retirer l’accès aux comptes déjà créés. Les paiements réels et les écritures Google Ads restent désactivés par défaut. Les tests Stripe ne permettent pas d’activer une campagne réelle. Aucun autopilot de dépenses, enregistrement audio ou transcription n’est annoncé comme opérationnel.
+Cinq comptes maximum par défaut (`PILOT_MAX_ACCOUNTS`), sans retirer l’accès aux comptes déjà créés. Stripe est reporté : l’accès pilote est ouvert sans abonnement (`BILLING_REQUIRED=false`). Les paiements réels et les écritures Google Ads restent désactivés par défaut. Les tests Stripe ne permettent pas d’activer une campagne réelle. Aucun autopilot de dépenses, enregistrement audio ou transcription n’est annoncé comme opérationnel.
 
 ## Vérifier et lancer
 
@@ -36,7 +36,7 @@ L’URL applicative est https://artisanpilot-mvp-production.up.railway.app/studi
 
 Les migrations sont additives. Ne pas modifier la clé de chiffrement OAuth existante ni réinitialiser la base. Aucun nettoyage de données métier historiques n’est exécuté dans ce pilote.
 
-## Dépendances avant ouverture payante
+## Dépendances avant ouverture payante (hors pilote gratuit)
 
 Configurer et valider Stripe en TEST, le portail et ses webhooks ; connecter chaque vrai compte Google avec son propriétaire et vérifier le niveau d’accès du projet Cloud ; installer et vérifier les conversions d’appels ; valider l’expéditeur des emails et les sauvegardes. Compléter et valider les conditions commerciales et fiscales. Les paiements réels et chaque écriture publicitaire demandent une autorisation distincte après ces vérifications.
 

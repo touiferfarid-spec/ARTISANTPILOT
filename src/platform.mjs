@@ -1,6 +1,7 @@
 import {config,integrationsConfigured} from './config.mjs';
 import {AppError} from './errors.mjs';
-import {readTrackedCalls,listCallActions,configureCallActions,tagInfo} from './google-calls.mjs';
+import {readTrackedCalls,listCallActions,configureCallActions,tagInfo,readCallReporting} from './google-calls.mjs';
+import {findCityByCode} from './locations.mjs';
 import {dailyMetrics,listAccounts,requestAds} from './ads.mjs';
 
 export async function platformRoutes(req,res,url,ctx){
@@ -23,6 +24,7 @@ export async function platformRoutes(req,res,url,ctx){
       site:s?{name:s.site.business_name,city:s.site.city,slug:s.slug,status:s.status,hasDraft:s.has_draft,url:e?.verified_at?e.url:config.baseUrl+'/p/'+s.slug,updatedAt:s.updated_at}:null,
       contacts:{...leads.rows[0],clicks:clicks.rows[0].total},account,
       connections:{google:linked.rows.some(x=>x.provider==='ads'),googleConfigured:cfg.google,openaiConfigured:cfg.ai,emailConfigured:cfg.email,lovableConnected:Boolean(e?.verified_at),billingConfigured:cfg.stripe},
+      capabilities:{campaignWrites:config.allowCampaignWrites,activation:config.allowCampaignWrites&&config.allowActivation,conversionWrites:config.allowConversionWrites,pilotAccess:!config.billingRequired},
       period:'30 derniers jours',templateUrl:config.lovableTemplateUrl||null});return true;
   }
   if(p==='/api/site/template'&&m==='POST'){
@@ -45,6 +47,11 @@ export async function platformRoutes(req,res,url,ctx){
     await rateGuard(req,'integration-check',3,300000);
     await rateGuard(req,'integration-check-user:'+a.id,3,86400000);
     const checks={database:{status:'ok',message:'Vos données sont enregistrées.'},openai:{status:'not_configured'},google:{status:account?'pending':'not_connected'}};
+    const linked=await query("SELECT 1 FROM integrations WHERE user_id=$1 AND provider='ads'",[a.id]);
+    if(!account&&linked.rows.length)checks.google={status:'needs_selection',message:'Autorisation enregistrée. Choisissez votre compte dans « Ma publicité Google ».'};
+    if(!account&&!linked.rows.length)checks.google.message='Connectez votre compte dans « Ma publicité Google ».';
+    try{await findCityByCode('69123');checks.locations={status:'ok',message:'La recherche des communes françaises est disponible.'}}catch{checks.locations={status:'error',message:'Le service des communes ne répond pas pour le moment.'};}
+    checks.maps={status:config.mapsBrowserKey?'browser_check':'not_configured',message:config.mapsBrowserKey?'La carte se vérifie en affichant votre zone dans « Mon site internet ».':'La carte Google n’est pas configurée. La sélection de ville reste disponible.'};
     if(config.openaiKey){
       try{
         const r=await fetch('https://api.openai.com/v1/responses',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+config.openaiKey},body:JSON.stringify({model:config.openaiModel,input:'Réponds uniquement OK.',max_output_tokens:32,store:false}),signal:AbortSignal.timeout(20000)});
@@ -53,6 +60,12 @@ export async function platformRoutes(req,res,url,ctx){
       }catch{checks.openai={status:'error',message:'OpenAI ne répond pas pour le moment.'};}
     }
     if(account){try{await requestAds(query,a.id,`customers/${account.customer_id}/googleAds:search`,{body:{query:'SELECT customer.id FROM customer LIMIT 1'}});checks.google={status:'ok',message:'Compte Google Ads accessible.'}}catch(e){checks.google={status:'error',message:e.message,detail:e.detail||''}}}
+    if(account&&checks.google.status==='ok'){
+      try{const [settings,actions]=await Promise.all([readCallReporting(query,a.id,account.customer_id),listCallActions(query,a.id,account.customer_id)]);
+        const action=actions.some(x=>x.type==='WEBSITE_CALL'&&x.status==='ENABLED'&&tagInfo(x));
+        checks.calls={status:settings.enabled&&settings.conversionsEnabled&&action?'configured':'needs_setup',message:!settings.enabled||!settings.conversionsEnabled?'Activez les rapports et conversions d’appels dans Google Ads.':!action?'Ajoutez la conversion d’appels depuis le site dans Google Ads.':'La configuration Google est présente. Installez la balise puis vérifiez un appel réel.'};
+      }catch{checks.calls={status:'error',message:'Impossible de lire la configuration des appels dans Google Ads.'};}
+    }
     send(res,{checks});return true;
   }
   if(p==='/api/tracking'&&m==='GET'){

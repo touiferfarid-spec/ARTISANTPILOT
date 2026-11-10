@@ -76,17 +76,24 @@ test('end-to-end tenant, publication, contacts, OAuth and account lifecycle',asy
   r=await request('/site-track.js');assert.equal(r.headers.get('cross-origin-resource-policy'),'cross-origin');
  });
  await t.test('Ads OAuth is session-bound, encrypted and validation cannot publish',async()=>{
-  let r=await request('/api/google/connect',{cookie:alice});assert.equal(r.status,303,r.data);
+  let r=await request('/api/campaigns/drafts',{cookie:alice,body:{}});assert.equal(r.status,201,r.data);const unboundId=JSON.parse(r.data).draft.id;
+  assert.equal((await request('/api/campaigns/drafts/'+unboundId+'/validate',{cookie:alice,body:{}})).status,422);
+  r=await request('/api/google/connect',{cookie:alice});assert.equal(r.status,303,r.data);
   const u=new URL(r.headers.get('location')),state=u.searchParams.get('state');assert.equal(u.searchParams.get('code_challenge_method'),'S256');
   assert.equal((await request('/api/google/callback?state='+state+'&code=test',{cookie:bob})).status,400);
   r=await request('/api/google/callback?state='+state+'&code=test',{cookie:alice});assert.equal(r.status,303,r.data);
   const stored=(await db.query("SELECT encrypted_token FROM integrations WHERE user_id=$1 AND provider='ads'",[userId])).rows[0].encrypted_token;assert.ok(!stored.includes('test-access-token'));
   r=await request('/api/google/accounts/select',{cookie:alice,body:{customerId:'1234567890'}});assert.equal(r.status,200,r.data);
   assert.equal(JSON.parse((await request('/api/overview',{cookie:bob})).data).account,null);
+  r=await request('/api/campaigns/drafts/'+unboundId+'/validate',{cookie:alice,body:{}});assert.equal(r.status,200,r.data);
+  assert.equal((await db.query('SELECT customer_id FROM campaign_drafts WHERE id=$1',[unboundId])).rows[0].customer_id,'1234567890');
+  r=await request('/api/integrations/check',{cookie:alice,body:{}});assert.equal(r.status,200,r.data);assert.equal(JSON.parse(r.data).checks.calls.status,'needs_setup');
+  const pilot=JSON.parse((await request('/api/subscription',{cookie:alice})).data);assert.equal(pilot.pilotAccess,true);
   r=await request('/api/campaigns/drafts',{cookie:alice,body:{}});assert.equal(r.status,201,r.data);const id=JSON.parse(r.data).draft.id;
   r=await request('/api/campaigns/drafts/'+id+'/validate',{cookie:alice,body:{}});assert.equal(r.status,200,r.data);
   r=await request('/api/campaigns/drafts/'+id+'/prepare-paused',{cookie:alice,body:{confirm:'CREER EN PAUSE'}});assert.equal(r.status,503);
   assert.equal((await request('/api/stripe/checkout',{cookie:alice,body:{}})).status,503);
+  assert.equal((await request('/api/campaigns/drafts/'+id+'/activate',{cookie:alice,body:{confirm:'JE VALIDE LE BUDGET ET LA DIFFUSION'}})).status,503);
   await request('/api/google/disconnect',{cookie:alice,body:{}});
   assert.equal((await db.query("SELECT count(*)::int AS n FROM integrations WHERE user_id=$1 AND provider='ads'",[userId])).rows[0].n,0);
  });
