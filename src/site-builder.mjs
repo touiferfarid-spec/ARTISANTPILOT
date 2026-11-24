@@ -1,4 +1,6 @@
 import crypto from 'node:crypto';
+import {renderCallLanding} from './landing.mjs';
+import {tradeContent,serviceDescription} from './trade-content.mjs';
 import {normalizeFrenchPhone} from './phone.mjs';
 
 export const trades = Object.freeze({
@@ -24,7 +26,7 @@ export function normalizeSiteInput(value={}) {
   const job=clean(value.job,40).toLowerCase();
   if(!Object.hasOwn(trades,job))throw new Error('Sélectionnez un métier dans la liste.');
   const businessName=clean(value.business_name,90),city=clean(value.city,90),email=clean(value.email,180).toLowerCase();
-  if(businessName.length<3)throw new Error('Indiquez le nom complet de votre entreprise.');
+  if(businessName&&businessName.length<3)throw new Error('Indiquez le nom complet de votre entreprise.');
   if(city.length<2)throw new Error('Indiquez votre ville.');
   if(!emails.test(email))throw new Error('Indiquez une adresse email valide.');
   const phone=normalizeFrenchPhone(value.phone);
@@ -44,7 +46,7 @@ export function normalizeSiteInput(value={}) {
   if(siret && !/^\d{14}$/.test(siret))throw new Error('Le SIRET doit comporter exactement 14 chiffres. Laissez-le vide pour créer un brouillon.');
   const domainName=clean(value.domain_name,253).toLowerCase();
   if(domainName && !/^(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/.test(domainName))throw new Error('Nom de domaine non valide.');
-  return {business_name:businessName,job,job_label:trades[job].name,city,city_code:clean(value.city_code,15),radius_km:radius,email,phone,services,description,advantage,schedule,postal_code:postal,legal_address:legalAddress,siret,domain_name:domainName,design_style:['local','signature','atelier'].includes(value.design_style)?value.design_style:'local'};
+  return {business_name:businessName||trades[job].name,business_name_pending:!businessName,contact_name:clean(value.contact_name,64),job,job_label:trades[job].name,city,city_code:clean(value.city_code,15),radius_km:radius,email,phone,services,description,advantage,schedule,postal_code:postal,legal_address:legalAddress,siret,domain_name:domainName,design_style:['local','signature','atelier'].includes(value.design_style)?value.design_style:'local'};
 }
 export function makeSlug(input) {
   const prefix=alphabetize(input.business_name+'-'+input.city).slice(0,52).replace(/-$/,'')||'artisan';
@@ -60,52 +62,39 @@ export function suggestDomains(input) {
 export const htmlEscape=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 export function fallbackCopy(site){
   const job=site.job_label||trades[site.job]?.name||'Artisan';
+  const guide=tradeContent[site.job]||tradeContent.renovation;
+  const services=Array.isArray(site.services)?site.services:[];
   return {
     heading:job+' à '+site.city,
-    subheading:'Un besoin en '+job.toLowerCase()+' ? Contactez directement '+site.business_name+' pour présenter votre projet ou demander un devis.',
-    about:site.description||site.business_name+' intervient à '+site.city+' et dans les communes environnantes selon les prestations demandées.',
-    cta:'Appeler maintenant',
-    service_intro:'Découvrez les prestations proposées par notre équipe.',
+    subheading:(services.length?serviceDescription(services[0],site.job)+' ':'')+'Appelez pour connaître les disponibilités à '+site.city+'.',
+    about:site.description||site.business_name+' intervient à '+site.city+' et dans un rayon de '+site.radius_km+' km. Au téléphone, indiquez votre commune et la prestation souhaitée.',
+    cta:'Appeler maintenant',service_intro:guide.serviceIntro,
+    service_descriptions:services.map(service=>serviceDescription(service,site.job))
   };
 }
-const plain=v=>clean(v,350);
+const unverified=/(?:24\s*[h/]\s*(?:sur\s*)?(?:24|7)|7\s*j\s*\/\s*7|gratuit|garanti|certifi[ée]|meilleur|n[°º]\s*1|en\s*\d+\s*min|\d+\s*(?:€|euros?|ans d.expérience)|\d\s*\/\s*5|\d\s*étoiles?|agré[ée]|sans engagement|intervention immédiate|\bRGE\b)/iu;
+function safeText(value,max) {
+  if(typeof value!=='string')return '';
+  const text=clean(value,max+1);
+  return text.length>5&&text.length<=max&&!unverified.test(text)&&!/[<>]|https?:\/\//i.test(text)?text:'';
+}
 export function safeCopy(site,candidate){
   const fallback=fallbackCopy(site);if(!candidate||typeof candidate!=='object')return fallback;
-  const permitted=['heading','subheading','about','cta','service_intro'];
-  const out={...fallback};for(const key of permitted){const val=plain(candidate[key]);if(val&&val.length>5&&!/\b(24\s*\/?\s*7|gratuit|garanti|certifi[ée]|meilleur|n°\s*1|en\s*\d+\s*minutes)\b/i.test(val))out[key]=val;}
+  const out={...fallback};
+  for(const [key,max] of Object.entries({heading:110,subheading:210,about:380,cta:40,service_intro:165})){
+    const text=safeText(candidate[key],max);
+    if(text&&(key!=='heading'||text.toLocaleLowerCase('fr').includes(String(site.city).toLocaleLowerCase('fr'))))out[key]=text;
+  }
+  const cards=candidate.service_descriptions;
+  if(Array.isArray(cards)&&cards.length===fallback.service_descriptions.length){
+    out.service_descriptions=cards.map((value,i)=>safeText(value,150)||fallback.service_descriptions[i]);
+  }
   return out;
 }
 export function sitePreviewUrl(baseUrl,slug) { return baseUrl.replace(/\/$/,'')+'/p/'+encodeURIComponent(slug); }
 export function renderLanding(site,{baseUrl='',customHost=false,preview=false}={}){
-  const x=htmlEscape;
-  const copy=safeCopy(site,site.copy);
-  const serviceList=(Array.isArray(site.services)?site.services:[]).slice(0,8);
-  const phone=String(site.phone||'');
-  const title=copy.heading+' | '+site.business_name;
-  const desc=copy.subheading.slice(0,155);
-  const color=trades[site.job]?.color||'blue';
-  const adsId=/^AW-\d{6,16}$/.test(String(site.google_tag_id||''))?String(site.google_tag_id):'';
-  const label=/^[a-zA-Z0-9_-]{4,100}$/.test(String(site.google_conversion_label||''))?String(site.google_conversion_label):'';
-  
   const hostname=customHost?'https://'+site.domain_name:sitePreviewUrl(baseUrl,site.slug);
-  const scriptAttrs='data-slug="'+x(site.slug)+'" data-phone="'+x(phone)+'" data-ads-id="'+x(adsId)+'" data-label="'+x(label)+'"';
-  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${x(title)}</title><meta name="description" content="${x(desc)}"><meta name="theme-color" content="#0e263c">
-${preview?'<meta name="robots" content="noindex,nofollow">':''}<meta property="og:title" content="${x(title)}"><meta property="og:description" content="${x(desc)}"><meta property="og:type" content="website"><link rel="canonical" href="${x(hostname)}"><link rel="stylesheet" href="/landing.css"></head>
-<body class="landing theme-${x(color)} design-${x(site.design_style||'local')}">${preview?'<div class="draft-banner">Aperçu privé · Relisez vos informations avant publication. <a href="/studio#site">Retour au studio →</a></div>':''}
-<header class="landing-header"><div class="landing-wrap header-row"><a class="logo" href="#accueil"><span class="logo-icon">${x(site.business_name.slice(0,1).toUpperCase())}</span><span>${x(site.business_name)}</span></a><a class="mini-phone" href="tel:${x(phone)}" data-call><span aria-hidden="true">↗</span> <span>Appelez-nous</span></a></div></header>
-<main id="accueil"><section class="landing-hero"><div class="landing-wrap hero-layout"><div class="hero-words"><div class="eyebrow"><span class="pulse"></span> ${x(site.job_label)} · ${x(site.city)}</div>
-<h1>${x(copy.heading)}</h1><p class="hero-subtitle">${x(copy.subheading)}</p>
-<div class="hero-actions"><a class="primary-call" href="tel:${x(phone)}" data-call><span aria-hidden="true">↗</span> &nbsp; ${x(copy.cta)}</a><a href="#contact" class="secondary-call">Être rappelé ↓</a></div>
-<p class="help-line">Contact direct avec l’entreprise · Numéro : <strong data-number>${x(phone)}</strong></p></div>
-<div class="hero-card"><div class="card-mark" aria-hidden="true">${x(site.business_name.slice(0,1).toUpperCase())}</div><div class="card-overline">Besoin d’un professionnel ?</div><h2>Parlons de votre projet</h2><p>Présentez-nous votre besoin par téléphone. Nous vous indiquerons les prochaines étapes.</p><a href="tel:${x(phone)}" data-call class="card-call"><span aria-hidden="true">↗</span> &nbsp; Appeler ${x(site.business_name)}</a><div class="card-geo">◎ ${x(site.city)} · Rayon déclaré : ${x(site.radius_km)} km</div></div></div></section>
-<section id="prestations" class="landing-section"><div class="landing-wrap"><div class="section-kicker">NOS SERVICES</div><h2>Des prestations adaptées à vos besoins</h2><p class="section-intro">${x(copy.service_intro)}</p><div class="services-grid">${serviceList.map((service,i)=>`<article class="service-card"><div class="service-icon">${String(i+1).padStart(2,'0')}</div><h3>${x(service)}</h3><p>Vous avez besoin de cette prestation ? Échangeons sur votre demande.</p><a href="tel:${x(phone)}" data-call>Nous appeler →</a></article>`).join('')}</div></div></section>
-<section class="landing-section location-section"><div class="landing-wrap location-layout"><div><div class="section-kicker">VOTRE ENTREPRISE LOCALE</div><h2>${x(site.business_name)}</h2><p>${x(copy.about)}</p>${site.advantage?`<p class="advantage">${x(site.advantage)}</p>`:''}${site.schedule?`<p><strong>Horaires déclarés :</strong> ${x(site.schedule)}</p>`:''}<div class="location-badge">◎ ${x(site.city)} et environs</div></div><div class="contact-panel"><h3>Nous contacter</h3><p>Contactez notre entreprise pour obtenir des informations sur votre besoin.</p><a class="primary-call" href="tel:${x(phone)}" data-call><span aria-hidden="true">↗</span> &nbsp; Appeler l’entreprise</a><a class="email-link" href="mailto:${x(site.email)}">${x(site.email)}</a></div></div></section>
-<section id="contact" class="landing-section"><div class="landing-wrap inquiry-layout"><div><div class="section-kicker">PARLONS DE VOTRE PROJET</div><h2>Pas le temps d’appeler ?<br>Laissez-nous votre numéro.</h2><p>Décrivez votre besoin en quelques mots. Votre demande sera transmise directement à ${x(site.business_name)}.</p><a class="email-link" href="tel:${x(phone)}" data-call>Ou appelez au <span data-number>${x(phone)}</span> ↗</a></div><form class="inquiry-form" data-artisan-lead method="post" action="/api/public/sites/${x(site.slug)}/leads"><label>Votre nom<input name="name" autocomplete="name" required minlength="2" maxlength="100" placeholder="Votre nom"></label><label>Votre téléphone<input name="phone" type="tel" autocomplete="tel" required maxlength="40" placeholder="06 12 34 56 78"></label><label>Votre besoin<textarea name="message" maxlength="1200" rows="3" placeholder="La prestation souhaitée, votre commune…"></textarea></label><label class="trap" aria-hidden="true">Ne pas remplir<input name="company" tabindex="-1" autocomplete="off"></label><label class="inquiry-consent"><input type="checkbox" name="consent" required> J’autorise ${x(site.business_name)} à me recontacter au sujet de cette demande. <a href="/p/${x(site.slug)}/confidentialite">Confidentialité</a></label><button class="primary-call" type="submit" ${preview?'disabled':''}>Demander à être rappelé <span aria-hidden="true">↗</span></button><output data-form-status role="status">${preview?'Le formulaire sera actif après publication.':''}</output></form></div></section>
-<section class="final-banner"><div class="landing-wrap"><h2>Votre projet commence par un appel.</h2><p>Expliquez votre besoin directement à ${x(site.business_name)}.</p><a class="primary-call light" href="tel:${x(phone)}" data-call><span aria-hidden="true">↗</span> &nbsp; Nous appeler</a></div></section></main>
-<footer class="landing-footer"><div class="landing-wrap footer-row"><div><strong>${x(site.business_name)}</strong><span>${x(site.job_label)} · ${x(site.city)}</span>${site.siret?`<span>SIRET : ${x(site.siret)}</span>`:''}</div><div><a href="mailto:${x(site.email)}">Email</a><a href="/p/${x(site.slug)}/confidentialite">Confidentialité</a><a href="/p/${x(site.slug)}/mentions-legales">Mentions légales</a><button type="button" class="consent-settings" data-consent-settings>Mes préférences de mesure</button><span>Ce site est édité par l’entreprise indiquée.</span></div></div></footer>
-<a class="sticky-mobile" href="tel:${x(phone)}" data-call><span aria-hidden="true">↗</span> &nbsp; ${x(copy.cta)}</a>
-${preview?'':'<script src="/site-track.js" defer '+scriptAttrs+'></script>'}</body></html>`;
+  return renderCallLanding(site,{baseUrl,hostname,preview,copy:safeCopy(site,site.copy),color:trades[site.job]?.color||'blue'});
 }
 
 export function renderLegalPage(site,kind='privacy'){

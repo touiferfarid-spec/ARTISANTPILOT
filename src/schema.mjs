@@ -146,6 +146,7 @@ export const migrations = [
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`,
   `ALTER TABLE site_call_clicks ADD COLUMN IF NOT EXISTS event_key TEXT`,
+  `ALTER TABLE site_call_clicks ADD COLUMN IF NOT EXISTS position TEXT`,
   `CREATE UNIQUE INDEX IF NOT EXISTS site_call_event_unique ON site_call_clicks(site_user_id,event_key)`,
   `CREATE TABLE IF NOT EXISTS login_states (
     state_hash TEXT PRIMARY KEY, verifier TEXT NOT NULL, expires_at TIMESTAMPTZ NOT NULL
@@ -182,6 +183,8 @@ export const migrations = [
     customer_id TEXT NOT NULL, website TEXT NOT NULL, status TEXT NOT NULL,
     checked_at TIMESTAMPTZ NOT NULL DEFAULT now(), PRIMARY KEY(user_id,customer_id)
   )`,
+  `ALTER TABLE tracking_checks ADD COLUMN IF NOT EXISTS installed_at TIMESTAMPTZ`,
+  `ALTER TABLE tracking_checks ADD COLUMN IF NOT EXISTS phone TEXT`,
 ];
 export async function applyMigrations(pool) {
   const client = await pool.connect();

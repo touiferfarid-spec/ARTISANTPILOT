@@ -6,3 +6,28 @@
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
 
 .zone-preview{margin:18px 0}.zone-map{height:300px;border:1px solid var(--line);border-radius:12px;margin-top:14px}.zone-preview .small{margin:10px 0}.feedback:empty{display:none}
+
+#moreMenu {display:none}
+.next-action {display:grid;grid-template-columns:1fr auto;align-items:center;gap:20px;border-left:4px solid var(--green)}
+.next-action h2 {margin:5px 0}.next-action p {margin:0}.next-action .setup-list {grid-column:1/-1;border-top:1px solid var(--line);padding-top:8px}
+.setup-list summary,.form-options summary {cursor:pointer;min-height:44px;padding-block:12px;font-weight:650}
+.core-fields {display:grid;grid-template-columns:minmax(0,1fr);gap:16px;margin:18px 0 20px}
+.core-fields label,.city-field>label {display:block;font-size:14px;font-weight:650}.city-field{position:relative}
+.core-fields input,.core-fields select,.form-options input:not([type=checkbox]):not([type=radio]),.form-options select {min-height:46px;font-size:16px;width:100%;min-width:0}
+.core-fields small:not(:empty){display:block;margin-top:5px;color:var(--muted)}
+.form-options {border-top:1px solid var(--line);margin:0!important;padding-block:0!important}
+.form-options[open] {padding-bottom:14px!important}.form-options .form-grid {margin:10px 0}
+.form-options input[type=file] {padding:9px 0}.suggestions button {min-height:44px}
+#generate{margin-top:18px}#siteForm[aria-busy=true] #generate{opacity:.75}
+#publishCard:focus-within{border-color:var(--green)}#publishCard .button[hidden]{display:none}
+@media(max-width:760px){
+ #moreMenu{display:block;position:absolute;top:10px;right:18px;min-height:40px;padding:6px 12px;background:white;color:var(--green);border:1px solid var(--line);border-radius:8px;font:inherit;font-size:13px;font-weight:650}
+ .rail nav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));width:auto;gap:2px;margin-top:12px;overflow:visible}
+ .rail .nav-item{min-height:44px;justify-content:center;font-size:12px;padding:6px 2px}
+ .rail nav [data-view=google],.rail nav [data-view=account]{display:none}.rail nav.show-more [data-view=google],.rail nav.show-more [data-view=account]{display:flex;grid-column:span 2}
+ .next-action{grid-template-columns:1fr;gap:13px}.next-action .button{justify-self:start}
+ .form-grid {grid-template-columns:1fr}.card,.editor-side .card{padding:19px}
+ .content{padding-top:20px}.core-fields{gap:12px}.form-options summary{font-size:14px}
+ #publishCard,#siteForm,#budgetForm,#trackingState{scroll-margin-top:112px}.workspace .topbar{min-height:0}
+}
+#siteForm #generate {margin:0 0 12px}

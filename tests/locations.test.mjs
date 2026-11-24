@@ -48,3 +48,11 @@ test('out of bounds radius cannot be submitted to Google Ads API', () => {
   plan.proximity.radiusKm=150;
   assert.throws(()=>buildSearchCampaignOperations(plan,'1234567890'),/rayon/);
 });
+
+test('Metz et le code postal 57000 fonctionnent avec le référentiel embarqué',async()=>{
+ const {suggestCities,findCityByCode}=await import('../src/locations.mjs');
+ for(const term of ['Metz','57000']){
+  const cities=await suggestCities(term);assert.equal(cities[0].name,'Metz');
+  const city=await findCityByCode(cities[0].code);assert.equal(city.code,'57463');assert.ok(city.lng>6&&city.lng<7);
+ }
+});
