@@ -31,7 +31,7 @@ export async function contactRoutes(req,res,url,ctx) {
   const publicMatch=p.match(/^\/api\/public\/sites\/([a-z0-9-]{5,90})(?:\/(leads|events))?$/);
   if(publicMatch){
     const [,slug,action]=publicMatch;
-    const r=await query("SELECT s.user_id,s.site,s.slug,s.status,g.customer_id,e.origin AS external_origin,e.verified_at FROM artisan_sites s LEFT JOIN google_accounts g ON g.user_id=s.user_id AND g.selected=true LEFT JOIN external_sites e ON e.user_id=s.user_id WHERE s.slug=$1 AND s.status='published'",[slug]);
+    const r=await query("SELECT s.user_id,s.site-'portrait' AS site,s.slug,s.status,g.customer_id,e.origin AS external_origin,e.verified_at FROM artisan_sites s LEFT JOIN google_accounts g ON g.user_id=s.user_id AND g.selected=true LEFT JOIN external_sites e ON e.user_id=s.user_id WHERE s.slug=$1 AND s.status='published'",[slug]);
     if(!r.rows[0])throw new AppError('Ce site n’est pas publié.',404);
     const record=r.rows[0],origin=req.headers.origin;
     const templateOrigin=config.lovableTemplateUrl?new URL(config.lovableTemplateUrl).origin:'';
@@ -53,8 +53,9 @@ export async function contactRoutes(req,res,url,ctx) {
     if(action==='events'){
       if(x.type!=='call_click')throw new AppError('Événement invalide.',422);
       const eventKey=/^[a-zA-Z0-9-]{16,80}$/.test(x.requestId||'')?x.requestId:null;
+      const position=['header','hero','service','about','contact','footer','mobile'].includes(x.position)?x.position:'other';
       const ip=ctx.clientIp(req);
-      await query('INSERT INTO site_call_clicks(site_user_id,source,visitor_hash,event_key) VALUES($1,$2,$3,$4) ON CONFLICT(site_user_id,event_key) DO NOTHING',[record.user_id,source,sha(ip+':'+record.user_id+':'+new Date().toISOString().slice(0,10)),eventKey]);
+      await query('INSERT INTO site_call_clicks(site_user_id,source,visitor_hash,event_key,position) VALUES($1,$2,$3,$4,$5) ON CONFLICT(site_user_id,event_key) DO NOTHING',[record.user_id,source,sha(ip+':'+record.user_id+':'+new Date().toISOString().slice(0,10)),eventKey,position]);
       send(res,{recorded:true,metric:'click_to_call'},202,cors);return true;
     }
     throw new AppError('Fonction introuvable.',404);

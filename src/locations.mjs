@@ -1,4 +1,5 @@
 // French commune autocomplete and validated geographic coordinates.
+import {communeByCode, communesMatching} from './communes.mjs';
 // Uses France's public geographic reference data; no paid geocoding key needed.
 const BASE = 'https://geo.api.gouv.fr/communes';
 const FIELDS = 'nom,code,codeDepartement,centre,codesPostaux,population';
@@ -25,10 +26,15 @@ function town(record) {
   };
 }
 async function load(url, fetcher = fetch) {
-  const response = await fetcher(url, {
-    headers: {accept: 'application/json'},
-    signal: AbortSignal.timeout(WAIT_MS)
-  });
+  let response;
+  try {
+    response = await fetcher(url, {
+      headers: {accept: 'application/json'},
+      signal: AbortSignal.timeout(WAIT_MS)
+    });
+  } catch {
+    throw new Error('La recherche des communes ne répond pas pour le moment. Vos informations sont conservées ; réessayez dans un instant.');
+  }
   if (!response.ok) throw new Error('Service de recherche de villes indisponible');
   const data = await response.json();
   if (!Array.isArray(data) && (typeof data !== 'object' || data === null)) throw new Error('Réponse des villes invalide');
@@ -46,9 +52,10 @@ export function validCoordinates(lat, lng) {
 export function normalizeSearchText(s) {
   return cleanName(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 }
-export async function suggestCities(value, {fetcher = fetch} = {}) {
+export async function suggestCities(value, {fetcher} = {}) {
   const query = cleanName(value);
   if (query.length < 2 || query.length > 80 || !/^[\p{L}\p{N} '.-]+$/u.test(query)) return [];
+  if (!fetcher) return communesMatching(query);
   const key = normalizeSearchText(query);
   const prior = cache.get(key);
   if (prior && prior.expires > Date.now()) return prior.cities;
@@ -64,11 +71,19 @@ export async function suggestCities(value, {fetcher = fetch} = {}) {
   }).slice(0, 8).map(({population, ...entry}) => entry);
   if (cache.size > 300) cache.clear();
   cache.set(key, {cities, expires: Date.now() + 300000});
+  // Reuse the same trusted reference response when a selected suggestion is
+  // submitted. A second provider outage must not invalidate a verified choice.
+  for(const city of cities)cache.set('code:'+city.code,{city,expires:Date.now()+86400000});
   return cities;
 }
-export async function findCityByCode(value, {fetcher = fetch} = {}) {
+export async function findCityByCode(value, {fetcher} = {}) {
   const code = String(value || '').trim().toUpperCase();
   if (!INSEE.test(code)) throw new Error('Choisissez une ville parmi les suggestions.');
+  if (!fetcher) {
+    const city=communeByCode(code);
+    if (!city) throw new Error('Ville introuvable dans le référentiel français.');
+    return city;
+  }
   const key = 'code:' + code, prior = cache.get(key);
   if (prior && prior.expires > Date.now()) return prior.city;
   const url = new URL(BASE + '/' + encodeURIComponent(code));

@@ -53,3 +53,35 @@ test('brouillon sans informations légales',()=>{
 test('SIRET partiel produit un message explicite',()=>{
  assert.throws(()=>normalizeSiteInput({...input,siret:'123'}),/14 chiffres/);
 });
+
+test('chacune des 14 pages affiche son métier, sa photo et le téléphone sur tous les liens',async()=>{
+ const {tradeContent}=await import('../src/trade-content.mjs');
+ const {readFile}=await import('node:fs/promises');
+ const images=new Set();
+ for(const [job,trade] of Object.entries(trades)){
+  const site={...normalizeSiteInput({...input,job,services:trade.services}),slug:'artisan-test-123456'};
+  const page=renderLanding(site,{baseUrl:'https://example.com',preview:true});
+  const asset=tradeContent[job].image;images.add(asset);
+  for(const suffix of ['','-sm']){
+   const name=asset+suffix+'.webp';assert.ok(page.includes('/assets/trades/'+name));
+   const file=await readFile(new URL('../public/assets/trades/'+name,import.meta.url));assert.equal(file.toString('ascii',8,12),'WEBP');
+  }
+  const numbers=[...page.matchAll(/href="tel:([^"]+)"/g)].map(m=>m[1]);
+  assert.ok(numbers.length>=5);assert.ok(numbers.every(n=>n===site.phone));
+  assert.ok(page.includes('data-call-position="mobile"'));assert.match(page,/Photo d’illustration/);
+  assert.equal(new Set(safeCopy(site).service_descriptions).size,trade.services.length);
+ }
+ assert.equal(images.size,14);
+});
+
+test('photo de l’entreprise normalisée en WebP sans métadonnées',async()=>{
+ const {prepareSitePhoto}=await import('../src/site-photo.mjs');
+ const sharp=(await import('sharp')).default;
+ const source=await sharp({create:{width:1100,height:500,channels:3,background:'#28706b'}}).jpeg().withMetadata().toBuffer();
+ const uri=await prepareSitePhoto('data:image/jpeg;base64,'+source.toString('base64'));
+ const meta=await sharp(Buffer.from(uri.split(',')[1],'base64')).metadata();
+ assert.equal(meta.format,'webp');assert.equal(meta.width,960);assert.equal(meta.exif,undefined);
+ const page=renderLanding({...normalizeSiteInput(input),portrait:uri,slug:'test-artisan-123456'});
+ assert.match(page,/Photo de Dupont Plomberie/);assert.doesNotMatch(page,/Photo d’illustration/);
+ await assert.rejects(prepareSitePhoto('data:image/jpeg;base64,YWJjZA=='));
+});

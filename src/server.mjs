@@ -2,7 +2,10 @@ import http from 'node:http';
 import {authRoutes,reservePilotAccount} from './auth.mjs';
 import {contactRoutes} from './contacts.mjs';
 import {platformRoutes} from './platform.mjs';
+import {clearTracking,readTrackingState} from './tracking.mjs';
 import {normalizeSiteInput,makeSlug,suggestDomains,renderLanding,renderLegalPage,sitePreviewUrl,trades} from './site-builder.mjs';
+import {prepareSitePhoto} from './site-photo.mjs';
+import {tradeContent} from './trade-content.mjs';
 import {generateSiteCopy} from './site-copy.mjs';
 import {lovableBuildUrl} from './lovable-bridge.mjs';
 import {readTrackedCalls, listCallActions, configureCallActions} from './google-calls.mjs';
@@ -20,6 +23,7 @@ import {checkStripeSignature,createCheckout,createPortal,applyStripeEvent} from 
 import {generateOptionalCopy} from './assistant.mjs';
 import {findCityByCode, suggestCities, validateRadiusKm, normalizeSearchText} from './locations.mjs';
 import {normalizeFrenchPhone} from './phone.mjs';
+const tradeImages=new Set(Object.values(tradeContent).flatMap(t=>[t.image+'.webp',t.image+'-sm.webp']));
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
 export async function createServer({pool: suppliedPool}={}) {
 let pool=suppliedPool||null,dbReady=false,dbError='';
@@ -38,7 +42,7 @@ function response(res,status,body,headers={}){res.writeHead(status,secureHeaders
 const send=(res,data,status=200,headers={})=>response(res,status,data,headers);
 function redirect(res,uri){res.writeHead(303,secureHeaders({'location':uri,'cache-control':'no-store'}));res.end()}
 async function readBody(req,limit=18000){const chunks=[];let size=0;for await(const chunk of req){size+=chunk.length;if(size>limit)throw new HttpError('Requête trop volumineuse',413);chunks.push(chunk)}return Buffer.concat(chunks).toString('utf8')}
-async function readJson(req){let raw=await readBody(req);try{return raw?JSON.parse(raw):{}}catch{throw new HttpError('JSON invalide',400)}}
+async function readJson(req,limit){const raw=await readBody(req,limit);try{return raw?JSON.parse(raw):{}}catch{throw new HttpError('JSON invalide',400)}}
 const clientIp=req=>String(req.headers['x-forwarded-for']||req.socket.remoteAddress||'unknown').split(',').at(-1).trim();
 let lastCleanup=0;
 async function rateGuard(req,category,max,windowMs=60000){
@@ -75,6 +79,13 @@ async function view(req,res,p){
 }
 async function handle(req,res){
   const url=new URL(req.url,config.baseUrl),p=url.pathname,m=req.method;
+  if((m==='GET'||m==='HEAD')&&p.startsWith('/assets/trades/')){
+    const name=p.slice('/assets/trades/'.length);
+    if(!tradeImages.has(name))throw new HttpError('Image introuvable.',404);
+    const data=await fs.readFile(path.join(ROOT,'../public/assets/trades',name));
+    res.writeHead(200,secureHeaders({'content-type':'image/webp','content-length':data.length,'cache-control':'public, max-age=86400'}));
+    return res.end(m==='HEAD'?undefined:data);
+  }
   if(m==='GET'&&['/account','/account.js','/workspace.css','/workspace.js','/workspace-map.js','/','/studio','/studio.js','/studio.css','/landing.css','/site-track.js','/privacy','/confidentialite','/terms','/conditions','/app.js','/coverage.js','/style.css'].includes(p))return view(req,res,p);
   if(p==='/api/health')return send(res,{version:config.version,commit:process.env.RAILWAY_GIT_COMMIT_SHA?.slice(0,12)||null,status:dbReady?'ok':'degraded',database:dbReady,integrations:integrationsConfigured(),writes:{accountCreation:config.allowAccountCreation,campaignCreation:config.allowCampaignWrites,activation:config.allowActivation,locationSync:config.allowLocationSync},message:dbReady?'Base active, API externes selon configuration':'La base de données doit être initialisée'},dbReady?200:503);
   if(m==='GET' && p.startsWith('/p/')){
@@ -166,25 +177,29 @@ async function handle(req,res){
   if(p==='/api/site/generate'&&m==='POST'){
     await rateGuard(req,'site-generate',8,60000);
     await rateGuard(req,'site-generate-user:'+a.id,20,86400000);
-    let input;
-    try{input=normalizeSiteInput(await readJson(req));}catch(e){throw new HttpError(e.message,422)}
+    const raw=await readJson(req,750000);
+    let input,photo;
+    try{input=normalizeSiteInput({...raw,email:raw.email||a.email});if(raw.photo_upload)photo=await prepareSitePhoto(raw.photo_upload);}catch(e){throw new HttpError(e.message,422)}
     let city;
     try{city=await findCityByCode(input.city_code);}catch(e){throw new HttpError(e.message,422)}
     if(normalizeSearchText(city.name)!==normalizeSearchText(input.city))throw new HttpError('Choisissez une commune dans les suggestions.',422);
-    const prior=await query('SELECT slug,site,status FROM artisan_sites WHERE user_id=$1',[a.id]);
-    const slug=prior.rows[0]?.slug||makeSlug(input);
+    const prior=await query("SELECT slug,site,status,COALESCE(draft,site)->>'portrait' AS saved_photo FROM artisan_sites WHERE user_id=$1",[a.id]);
+    let slug=prior.rows[0]?.slug||makeSlug(input);
+    const portrait=photo||(raw.remove_photo===true?null:prior.rows[0]?.saved_photo);
     const generated=await generateSiteCopy(input);
-    const site={...input,google_tag_id:prior.rows[0]?.site?.google_tag_id,google_conversion_label:prior.rows[0]?.site?.google_conversion_label,google_customer_id:prior.rows[0]?.site?.google_customer_id,city:city.name,city_lat:city.lat,city_lng:city.lng,copy:generated.copy,copy_source:generated.source,slug};
-    await query(`INSERT INTO artisan_sites(user_id,slug,site,status) VALUES($1,$2,$3,'draft')
-      ON CONFLICT(user_id) DO UPDATE SET site=CASE WHEN artisan_sites.status='published' THEN artisan_sites.site ELSE EXCLUDED.site END,draft=CASE WHEN artisan_sites.status='published' THEN EXCLUDED.site ELSE NULL END,updated_at=now()`,[a.id,slug,JSON.stringify(site)]);
+    const site={...input,...(portrait?{portrait}:{}),google_tag_id:prior.rows[0]?.site?.google_tag_id,google_conversion_label:prior.rows[0]?.site?.google_conversion_label,google_customer_id:prior.rows[0]?.site?.google_customer_id,city:city.name,city_lat:city.lat,city_lng:city.lng,copy:generated.copy,copy_source:generated.source,slug};
+    const saved=await query(`INSERT INTO artisan_sites(user_id,slug,site,status) VALUES($1,$2,$3,'draft')
+      ON CONFLICT(user_id) DO UPDATE SET site=CASE WHEN artisan_sites.status='published' THEN artisan_sites.site ELSE EXCLUDED.site END,draft=CASE WHEN artisan_sites.status='published' THEN EXCLUDED.site ELSE NULL END,updated_at=now() RETURNING slug,status`,[a.id,slug,JSON.stringify(site)]);
+    slug=saved.rows[0].slug;site.slug=slug;
     await audit(a.id,'site.generated',{job:input.job,slug,source:generated.source});
-    return send(res,{site:{...site,status:'draft',live_published:prior.rows[0]?.status==='published',preview_url:sitePreviewUrl(config.baseUrl,slug)+(prior.rows[0]?.status==='published'?'?draft=1':'')},domains:suggestDomains(input),note:'Les domaines proposés ne sont pas encore vérifiés auprès d’un registrar.'},201);
+    return send(res,{site:{...site,status:'draft',live_published:saved.rows[0].status==='published',preview_url:sitePreviewUrl(config.baseUrl,slug)+(saved.rows[0].status==='published'?'?draft=1':'')},domains:suggestDomains(input),note:'Les domaines proposés ne sont pas encore vérifiés auprès d’un registrar.'},201);
   }
   if(p==='/api/site/publish'&&m==='POST'){
     const prior=await query('SELECT COALESCE(draft,site) AS site FROM artisan_sites WHERE user_id=$1',[a.id]);
     if(!prior.rows.length)throw new HttpError('Générez votre site avant sa publication.',404);
     const legal=await readJson(req);
     const siteLegal={...prior.rows[0].site,siret:String(legal.siret??prior.rows[0].site.siret??'').replace(/\s/g,''),legal_address:String(legal.legal_address??prior.rows[0].site.legal_address??'').trim()};
+    if(siteLegal.business_name_pending)throw new HttpError('Ajoutez le nom de votre entreprise et mettez à jour votre aperçu avant publication.',422);
     if(!/^\d{14}$/.test(siteLegal.siret))throw new HttpError('Indiquez un SIRET de 14 chiffres avant publication.',422);
     if(siteLegal.legal_address.length<12)throw new HttpError('Indiquez une adresse professionnelle complète avant publication.',422);
     const r=await query("UPDATE artisan_sites SET status='published',site=$2,draft=NULL,updated_at=now() WHERE user_id=$1 RETURNING slug,site",[a.id,JSON.stringify(siteLegal)]);
@@ -314,13 +329,16 @@ async function handle(req,res){
     if(account.currency && account.currency!=='EUR')throw new HttpError('Cette version facture les budgets en EUR. Sélectionnez un compte Google Ads en euros.',422);
     if(!account.currency)throw new HttpError('Impossible de vérifier la devise du compte. Vérifiez les accès Google Ads avant de continuer.',422);
     const client=await pool.connect();
-    try{await client.query('BEGIN');await client.query('UPDATE google_accounts SET selected=false WHERE user_id=$1',[a.id]);
+    try{await client.query('BEGIN');
+      await client.query('SELECT id FROM users WHERE id=$1 FOR UPDATE',[a.id]);
+      const previous=(await client.query('SELECT customer_id FROM google_accounts WHERE user_id=$1 AND selected=true',[a.id])).rows[0];
+      await client.query('UPDATE google_accounts SET selected=false WHERE user_id=$1',[a.id]);
       await client.query(`INSERT INTO google_accounts(user_id,customer_id,name,currency,timezone,selected,login_customer_id) VALUES($1,$2,$3,$4,$5,true,$6)
         ON CONFLICT(user_id,customer_id) DO UPDATE SET selected=true,name=EXCLUDED.name,currency=EXCLUDED.currency,timezone=EXCLUDED.timezone,login_customer_id=EXCLUDED.login_customer_id`,
         [a.id,id,account.name,account.currency||'EUR',account.timezone||'Europe/Paris',account.loginCustomerId||'']);
+      if(previous?.customer_id!==id)await clearTracking((...args)=>client.query(...args),a.id);
       await client.query('COMMIT');
     }catch(e){await client.query('ROLLBACK');throw e}finally{client.release()}
-    await query('UPDATE profiles SET conversion_verified=false WHERE user_id=$1',[a.id]);
     await audit(a.id,'google.account.select',{id});return send(res,{selected:id});
   }
   if(p==='/api/google/account-create/check'&&m==='POST'){
@@ -495,7 +513,8 @@ async function handle(req,res){
       if(!config.allowActivation)throw new HttpError('Activation de campagnes désactivée par l’administrateur.',503);
       if(draft.status!=='paused'||!draft.google_campaign_resource)throw new HttpError('La campagne doit exister en pause avant activation.');
       const profile=await getProfile(a.id);
-      if(!profile?.conversion_verified)throw new HttpError('Le suivi des conversions doit être vérifié par le support avant activation.',403);
+      const tracking=await readTrackingState(query,a.id,account);
+      if(!profile?.conversion_verified||!tracking.verified||draft.plan.website!==tracking.website||draft.plan.callPhone!==tracking.phone)throw new HttpError('Vérifiez le suivi du site et du numéro actuels avant activation.',403);
       const payment=await query('SELECT status,livemode FROM subscriptions WHERE user_id=$1',[a.id]);
       if(config.billingRequired&&(!['active','trialing'].includes(payment.rows[0]?.status)||!payment.rows[0]?.livemode||!config.stripeAllowLive))throw new HttpError('Un abonnement réel validé est nécessaire avant activation. Un paiement de test ne permet pas de diffuser.',402);
       const input=await readJson(req);if(input.confirm!=='JE VALIDE LE BUDGET ET LA DIFFUSION')throw new HttpError('Confirmez explicitement le budget et la mise en diffusion.');

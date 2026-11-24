@@ -1,6 +1,6 @@
 # ArtisanPilot — pilote à 99 €/mois
 
-Version 0.4.1. Reprise du SaaS existant ; lancement payant soumis aux validations externes décrites dans [le guide pilote](docs/PILOT_LAUNCH.md).
+Version 0.5.0. Le studio prépare un aperçu en trois champs. Les pages de 14 métiers proposent un appel direct, une photo personnalisable et un formulaire de rappel. Les étapes de lancement figurent dans [le guide pilote](docs/PILOT_LAUNCH.md).
 
 ## Parcours livré
 

@@ -1,6 +1,6 @@
 const env = process.env;
 export const config = {
-  version: '0.4.1',
+  version: '0.5.0',
   billingRequired: env.BILLING_REQUIRED === 'true',
   pilotMaxAccounts: Math.max(1, Math.min(1000, Number.parseInt(env.PILOT_MAX_ACCOUNTS,10)||5)),
   port: Number(env.PORT || 3000),

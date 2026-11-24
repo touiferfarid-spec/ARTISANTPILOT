@@ -9,7 +9,7 @@
   const requestId=()=>crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+'-'+Math.random().toString(36).slice(2)+'-artisan';
   const send=(type,body)=>fetch(endpoint+'/'+type,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body),credentials:'omit',keepalive:true});
   function bind(){
-    for(const link of document.querySelectorAll('[data-call],a[href^="tel:"]')){if(links.has(link))continue;links.add(link);link.addEventListener('click',()=>{send('events',{type:'call_click',requestId:requestId()}).catch(()=>{});});}
+    for(const link of document.querySelectorAll('[data-call],a[href^="tel:"]')){if(links.has(link))continue;links.add(link);link.addEventListener('click',()=>{send('events',{type:'call_click',position:link.dataset.callPosition||'other',requestId:requestId()}).catch(()=>{});});}
     for(const form of document.querySelectorAll('form[data-artisan-lead]')){if(forms.has(form))continue;forms.add(form);form.addEventListener('submit',async event=>{
       event.preventDefault();if(!form.reportValidity())return;
       const status=form.querySelector('[data-form-status]'),button=form.querySelector('[type="submit"]');
